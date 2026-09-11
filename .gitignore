@@ -1,0 +1,37 @@
+# Backend
+backend/venv/
+backend/*.db
+backend/*.sqlite
+backend/*.sqlite3
+backend/.env
+backend/.env.*
+backend/__pycache__/
+backend/**/__pycache__/
+*.pyc
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/dist/
+frontend/build/
+
+# Python virtual environments
+.venv/
+venv/
+
+# Logs
+logs/
+*.log
+
+# IDE & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# API keys / secrets
+*.key
+*.pem
+*.secret
+*.token
