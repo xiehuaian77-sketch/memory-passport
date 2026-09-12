@@ -31,7 +31,13 @@ from app.schemas.memory import (
     SemanticSearchRequest,
     SemanticSearchResponse,
 )
-from app.services import memory_service
+from app.schemas.governance import (
+    MemoryExplainResponse,
+    MemoryHistoryResponse,
+    UserMemoryPolicyOut,
+    UserMemoryPolicyUpdate,
+)
+from app.services import governance_service, memory_service
 from app.services.context_assembler import AssembledContext
 from app.services.extraction_service import extract_memory_candidates
 
@@ -218,17 +224,45 @@ async def backfill_memories(
 @router.get("", response_model=list[MemoryOut])
 async def list_memories(
     category: str | None = Query(default=None),
-    status: str | None = Query(default=None),
+    memory_type: str | None = Query(default=None),
+    source: str | None = Query(default=None),
+    status: str | None = Query(default="active"),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all memories for the authenticated user."""
+    """List all memories for the authenticated user, defaulting to active status."""
     memories = await memory_service.get_memories(
-        db, user.id, category=category, status=status, offset=offset, limit=limit
+        db,
+        user.id,
+        category=category,
+        memory_type=memory_type,
+        source=source,
+        status=status,
+        offset=offset,
+        limit=limit,
     )
     return memories
+
+
+@router.get("/policy", response_model=UserMemoryPolicyOut)
+async def get_user_memory_policy(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the current authenticated user's memory governance policy."""
+    return await governance_service.get_user_policy(db, user_id=user.id)
+
+
+@router.put("/policy", response_model=UserMemoryPolicyOut)
+async def update_user_memory_policy(
+    body: UserMemoryPolicyUpdate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update the current authenticated user's memory governance policy."""
+    return await governance_service.update_user_policy(db, user_id=user.id, update_data=body)
 
 
 @router.post("", response_model=MemoryOut, status_code=status.HTTP_201_CREATED)
@@ -330,6 +364,32 @@ async def restore_memory(
     if not mem:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
     return mem
+
+
+@router.get("/{memory_id}/explain", response_model=MemoryExplainResponse)
+async def explain_memory_endpoint(
+    memory_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Explain provenance, conflict status, and lifecycle summary for a memory."""
+    res = await governance_service.explain_memory(db, memory_id=memory_id, user_id=user.id)
+    if not res:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
+    return res
+
+
+@router.get("/{memory_id}/history", response_model=MemoryHistoryResponse)
+async def get_memory_history_endpoint(
+    memory_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get full chronological audit trail and version history for a memory."""
+    res = await governance_service.get_memory_history(db, memory_id=memory_id, user_id=user.id)
+    if not res:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
+    return res
 
 
 @router.post("/detect-conflicts", response_model=ConflictDetectionResponse)

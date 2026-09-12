@@ -121,6 +121,15 @@ async def extract_memory_from_conversation(
             detail="Conversation not found",
         )
 
+    # Check memory policy: allow_ai_extraction
+    from app.services import governance_service
+    policy = await governance_service.get_user_policy(db, user_id=user.id)
+    if not (policy.memory_enabled and policy.allow_ai_extraction):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="AI memory extraction is disabled by user policy",
+        )
+
     if body and body.message_ids:
         messages = await conversation_repo.get_messages_by_ids(
             db, conversation_id=conversation_id, message_ids=body.message_ids

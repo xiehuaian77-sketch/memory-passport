@@ -4,9 +4,12 @@ import type {
   ChatResponse,
   ExtractResponse,
   Memory,
+  MemoryExplainResponse,
+  MemoryHistoryResponse,
   SearchResult,
   TokenResponse,
   User,
+  UserMemoryPolicy,
 } from '@/types';
 
 const BASE = ''; // proxied via next.config.js rewrites
@@ -64,13 +67,75 @@ export async function getMe(token: string): Promise<User> {
 
 export async function listMemories(
   token: string,
-  category?: string
+  options?: {
+    category?: string;
+    memory_type?: string;
+    source?: string;
+    status?: string;
+    offset?: number;
+    limit?: number;
+  } | string
 ): Promise<Memory[]> {
-  const params = category ? `?category=${category}` : '';
-  const res = await fetch(`${BASE}/api/memories${params}`, {
+  const query = new URLSearchParams();
+  if (typeof options === 'string') {
+    if (options) query.set('category', options);
+  } else if (options) {
+    if (options.category) query.set('category', options.category);
+    if (options.memory_type) query.set('memory_type', options.memory_type);
+    if (options.source) query.set('source', options.source);
+    if (options.status) query.set('status', options.status);
+    if (options.offset !== undefined) query.set('offset', String(options.offset));
+    if (options.limit !== undefined) query.set('limit', String(options.limit));
+  }
+  const qs = query.toString();
+  const res = await fetch(`${BASE}/api/memories${qs ? `?${qs}` : ''}`, {
     headers: authHeaders(token),
   });
   return handleResponse<Memory[]>(res);
+}
+
+export async function getMemoryPolicy(token: string): Promise<UserMemoryPolicy> {
+  const res = await fetch(`${BASE}/api/memories/policy`, {
+    headers: authHeaders(token),
+  });
+  return handleResponse<UserMemoryPolicy>(res);
+}
+
+export async function updateMemoryPolicy(
+  token: string,
+  data: Partial<{
+    memory_enabled: boolean;
+    require_confirmation: boolean;
+    allow_memory_retrieval: boolean;
+    allow_ai_extraction: boolean;
+  }>
+): Promise<UserMemoryPolicy> {
+  const res = await fetch(`${BASE}/api/memories/policy`, {
+    method: 'PUT',
+    headers: authHeaders(token),
+    body: JSON.stringify(data),
+  });
+  return handleResponse<UserMemoryPolicy>(res);
+}
+
+export async function explainMemory(
+  token: string,
+  id: string
+): Promise<MemoryExplainResponse> {
+  const res = await fetch(`${BASE}/api/memories/${id}/explain`, {
+    headers: authHeaders(token),
+  });
+  return handleResponse<MemoryExplainResponse>(res);
+}
+
+export async function getMemoryHistory(
+  token: string,
+  id: string
+): Promise<MemoryHistoryResponse> {
+  const res = await fetch(`${BASE}/api/memories/${id}/history`, {
+    headers: authHeaders(token),
+  });
+  return handleResponse<MemoryHistoryResponse>(res);
 }
 
 export async function createMemory(

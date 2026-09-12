@@ -94,3 +94,52 @@ export const CATEGORY_COLORS: Record<MemoryCategory, string> = {
   task: 'bg-green-500/20 text-green-300 border-green-500/30',
   context: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
 };
+
+// ---------- Governance & Audit (Phase 3.2) ----------
+
+export interface MemoryAuditLog {
+  id: string;
+  memory_id: string | null;
+  user_id: string;
+  actor_type: 'user' | 'ai' | 'system';
+  actor_id: string;
+  action: string;
+  from_version: number | null;
+  to_version: number | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface UserMemoryPolicy {
+  user_id: string;
+  memory_enabled: boolean;
+  require_confirmation: boolean;
+  allow_memory_retrieval: boolean;
+  allow_ai_extraction: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MemoryExplainResponse {
+  memory_id: string;
+  key: string;
+  memory_type: string;
+  content: string;
+  status: string;
+  version: number;
+  source: string;
+  source_conversation_id: string | null;
+  source_message_id: string | null;
+  created_at: string;
+  updated_at: string;
+  is_active: boolean;
+  has_conflicts: boolean;
+  conflict_count: number;
+  audit_summary: Record<string, unknown>;
+}
+
+export interface MemoryHistoryResponse {
+  memory_id: string;
+  total_events: number;
+  history: MemoryAuditLog[];
+}

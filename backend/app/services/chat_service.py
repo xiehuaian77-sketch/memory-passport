@@ -178,36 +178,48 @@ class ChatService:
             if len(prior_history) > self.max_history:
                 prior_history = prior_history[-self.max_history :]
 
-        # 4. Long-term memory retrieval
+        # 4. Long-term memory retrieval (subject to user memory policy)
         context: AssembledContext | None = None
         if db is not None:
+            can_retrieve = True
             try:
-                if self.retrieval_config:
-                    retrieval_req = self.retrieval_config.model_copy(
-                        update={"query": clean_message}
+                from app.services import governance_service
+                policy = await governance_service.get_user_policy(db, user_id=user_id)
+                can_retrieve = bool(policy.memory_enabled and policy.allow_memory_retrieval)
+            except Exception as pol_exc:
+                logger.warning("Could not check user memory policy, defaulting to allowed: %s", pol_exc)
+                can_retrieve = True
+
+            if can_retrieve:
+                try:
+                    if self.retrieval_config:
+                        retrieval_req = self.retrieval_config.model_copy(
+                            update={"query": clean_message}
+                        )
+                    else:
+                        retrieval_req = MemoryRetrievalRequest(
+                            query=clean_message,
+                            top_k=5,
+                            min_relevance=0.10,
+                            max_memories=5,
+                            max_content_chars=500,
+                            max_context_chars=2000,
+                        )
+                    context = await memory_service.retrieve_context(
+                        db=db,
+                        user_id=user_id,
+                        request=retrieval_req,
                     )
-                else:
-                    retrieval_req = MemoryRetrievalRequest(
-                        query=clean_message,
-                        top_k=5,
-                        min_relevance=0.10,
-                        max_memories=5,
-                        max_content_chars=500,
-                        max_context_chars=2000,
+                except Exception as exc:
+                    logger.warning(
+                        "Memory retrieval failed for user %s (%s), continuing with history: %s",
+                        user_id,
+                        exc.__class__.__name__,
+                        exc,
                     )
-                context = await memory_service.retrieve_context(
-                    db=db,
-                    user_id=user_id,
-                    request=retrieval_req,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "Memory retrieval failed for user %s (%s), continuing with history: %s",
-                    user_id,
-                    exc.__class__.__name__,
-                    exc,
-                )
-                context = None
+                    context = None
+            else:
+                logger.info("Memory retrieval skipped for user %s per memory policy", user_id)
 
         # 5. Assemble prompt
         has_memories = bool(context and context.items)

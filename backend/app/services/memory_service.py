@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from app.schemas.memory import ConflictItem, MemoryRetrievalRequest
     from app.services.context_assembler import AssembledContext
 
+from app.models.governance import AuditAction, AuditActorType
 from app.models.memory import Memory
 from app.providers.embedding_provider import (
     EmbeddingError,
@@ -80,6 +81,26 @@ async def create_memory(
             mem.embedding_json = None
 
     await db.refresh(mem)
+
+    # Log audit event (CONFIRM if from conversation extraction, else CREATE)
+    from app.services import governance_service
+    evt_action = (
+        AuditAction.CONFIRM
+        if (getattr(data, "source", None) == "ai_extracted" or mem.source_conversation_id)
+        else AuditAction.CREATE
+    )
+    await governance_service.log_event(
+        db=db,
+        user_id=user_id,
+        action=evt_action,
+        actor_type=AuditActorType.USER,
+        actor_id=user_id,
+        memory_id=mem.id,
+        from_version=None,
+        to_version=1,
+        metadata={"key": mem.key, "memory_type": mem.memory_type, "source": mem.source},
+    )
+
     return mem
 
 
@@ -87,15 +108,20 @@ async def get_memories(
     db: AsyncSession,
     user_id: str,
     category: str | None = None,
-    status: str | None = None,
+    memory_type: str | None = None,
+    source: str | None = None,
+    status: str | None = "active",
     offset: int = 0,
     limit: int = 100,
 ) -> Sequence[Memory]:
-    """Get memories for a user, optionally filtered by category and status."""
+    """Get memories for a user, optionally filtered by category/memory_type, source, and status."""
     stmt = select(Memory).where(Memory.user_id == user_id)
-    if category:
-        stmt = stmt.where(Memory.memory_type == category)
-    if status is not None:
+    target_type = memory_type or category
+    if target_type:
+        stmt = stmt.where(Memory.memory_type == target_type)
+    if source:
+        stmt = stmt.where(Memory.source == source)
+    if status is not None and status.lower() != "all":
         stmt = stmt.where(Memory.status == status)
     stmt = stmt.order_by(Memory.updated_at.desc()).offset(offset).limit(limit)
     result = await db.execute(stmt)
@@ -131,7 +157,8 @@ async def update_memory(
         setattr(memory, field, value)
 
     # Monotonically increment version on update
-    memory.version = (memory.version or 1) + 1
+    old_version = memory.version or 1
+    memory.version = old_version + 1
 
     if content_changed:
         provider = embedding_provider or get_embedding_provider()
@@ -151,11 +178,44 @@ async def update_memory(
 
     await db.flush()
     await db.refresh(memory)
+
+    # Log audit event for UPDATE
+    from app.services import governance_service
+    await governance_service.log_event(
+        db=db,
+        user_id=memory.user_id,
+        action=AuditAction.UPDATE,
+        actor_type=AuditActorType.USER,
+        actor_id=memory.user_id,
+        memory_id=memory.id,
+        from_version=old_version,
+        to_version=memory.version,
+        metadata={"key": memory.key, "updated_fields": list(data.model_dump(exclude_unset=True).keys())},
+    )
+
     return memory
 
 
 async def delete_memory(db: AsyncSession, memory_id: str, user_id: str) -> bool:
-    """Delete a memory by ID."""
+    """Delete a memory by ID after recording audit log."""
+    mem = await get_memory_by_id(db, memory_id=memory_id, user_id=user_id)
+    if not mem:
+        return False
+
+    # Log DELETE audit event before hard delete so memory details are captured
+    from app.services import governance_service
+    await governance_service.log_event(
+        db=db,
+        user_id=user_id,
+        action=AuditAction.DELETE,
+        actor_type=AuditActorType.USER,
+        actor_id=user_id,
+        memory_id=mem.id,
+        from_version=mem.version,
+        to_version=mem.version,
+        metadata={"deleted_memory_id": mem.id, "deleted_key": mem.key},
+    )
+
     stmt = delete(Memory).where(Memory.id == memory_id, Memory.user_id == user_id)
     result = await db.execute(stmt)
     return result.rowcount > 0  # type: ignore[union-attr]
@@ -171,6 +231,20 @@ async def archive_memory(
     mem.status = "archived"
     await db.flush()
     await db.refresh(mem)
+
+    from app.services import governance_service
+    await governance_service.log_event(
+        db=db,
+        user_id=user_id,
+        action=AuditAction.ARCHIVE,
+        actor_type=AuditActorType.USER,
+        actor_id=user_id,
+        memory_id=mem.id,
+        from_version=mem.version,
+        to_version=mem.version,
+        metadata={"key": mem.key, "status": "archived"},
+    )
+
     return mem
 
 
@@ -184,6 +258,20 @@ async def restore_memory(
     mem.status = "active"
     await db.flush()
     await db.refresh(mem)
+
+    from app.services import governance_service
+    await governance_service.log_event(
+        db=db,
+        user_id=user_id,
+        action=AuditAction.RESTORE,
+        actor_type=AuditActorType.USER,
+        actor_id=user_id,
+        memory_id=mem.id,
+        from_version=mem.version,
+        to_version=mem.version,
+        metadata={"key": mem.key, "status": "active"},
+    )
+
     return mem
 
 
