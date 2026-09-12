@@ -190,12 +190,18 @@ export interface ConversationMemoryCandidate {
 }
 
 export interface ConflictItem {
-  conflict_type: 'key_conflict' | 'semantic_conflict';
+  conflict_type: 'key_conflict' | 'semantic_conflict' | 'contradiction';
   existing_memory_id: string;
   existing_key: string;
   existing_content: string;
   similarity?: number | null;
-  message: string;
+  message?: string;
+  recommendation?: string;
+  classification?: 'DUPLICATE' | 'SIMILAR' | 'RELATED' | 'UPDATE' | 'SUPERSEDE' | 'CONTRADICTION' | 'UNRELATED';
+  conflict_score?: number;
+  confidence?: number;
+  user_reason?: string;
+  tier_applied?: string;
 }
 
 export interface ConflictDetectionResponse {

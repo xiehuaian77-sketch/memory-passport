@@ -76,7 +76,7 @@ async def create_memory(
             mem.embedding = vec
             mem.embedding_json = embedding_to_json(vec)
             await db.flush()
-        except EmbeddingError as exc:
+        except (EmbeddingError, Exception) as exc:
             # Catch embedding errors safely without leaking secrets or failing memory creation
             logger.warning(
                 "Embedding generation failed for memory %s, preserving memory with embedding=None: %s",
@@ -382,66 +382,23 @@ async def detect_conflicts(
     content: str,
     memory_type: str = "preference",
     *,
+    candidate_valid_from: datetime | None = None,
     embedding_provider: EmbeddingProvider | None = None,
+    llm_enabled: bool = True,
 ) -> list[ConflictItem]:
-    """Detect conflicts between candidate memory and active memories. Strictly read-only."""
-    from app.schemas.memory import ConflictItem
+    """Detect conflicts between candidate memory and active memories using 3-tier cascade. Strictly read-only."""
+    from app.services import conflict_service
 
-    conflicts: list[ConflictItem] = []
-    key_clean = key.strip()
-    content_clean = content.strip()
-
-    # 1. Exact key conflict on active memories
-    stmt = select(Memory).where(
-        Memory.user_id == user_id,
-        Memory.status == "active",
-        Memory.key == key_clean,
+    return await conflict_service.evaluate_conflicts(
+        db=db,
+        user_id=user_id,
+        key=key,
+        content=content,
+        memory_type=memory_type,
+        candidate_valid_from=candidate_valid_from,
+        embedding_provider=embedding_provider,
+        llm_enabled=llm_enabled,
     )
-    res = await db.execute(stmt)
-    existing_key_mems = res.scalars().all()
-
-    for em in existing_key_mems:
-        if em.content.strip().lower() != content_clean.lower():
-            conflicts.append(
-                ConflictItem(
-                    existing_memory_id=em.id,
-                    existing_key=em.key,
-                    existing_content=em.content,
-                    conflict_type="key_conflict",
-                    similarity=None,
-                    recommendation="archive_old",
-                )
-            )
-
-    # 2. Semantic conflict check via semantic_search on active memories
-    already_flagged_ids = {c.existing_memory_id for c in conflicts}
-    try:
-        sem_results = await semantic_search(
-            db,
-            user_id=user_id,
-            query=content_clean,
-            limit=5,
-            status="active",
-            embedding_provider=embedding_provider,
-        )
-        for em, sim in sem_results:
-            if em.id in already_flagged_ids:
-                continue
-            if sim >= 0.85 and em.content.strip().lower() != content_clean.lower():
-                conflicts.append(
-                    ConflictItem(
-                        existing_memory_id=em.id,
-                        existing_key=em.key,
-                        existing_content=em.content,
-                        conflict_type="semantic_conflict",
-                        similarity=sim,
-                        recommendation="archive_old",
-                    )
-                )
-    except Exception as exc:
-        logger.warning("Semantic conflict detection fallback (error ignored): %s", exc)
-
-    return conflicts
 
 
 async def semantic_search(

@@ -95,12 +95,37 @@ class ConflictItem(BaseModel):
     existing_key: str
     existing_content: str
     conflict_type: str = Field(
-        description="Type of conflict: 'key_conflict' | 'semantic_conflict'"
+        default="key_conflict",
+        description="Type of conflict: 'key_conflict' | 'semantic_conflict' | 'contradiction'",
     )
     similarity: float | None = None
     recommendation: str = Field(
         default="archive_old",
-        description="Suggested action: 'archive_old' | 'replace' | 'keep_both'",
+        description="Suggested action: 'archive_old' | 'replace' | 'keep_both' | 'supersede' | 'merge'",
+    )
+    classification: str = Field(
+        default="CONTRADICTION",
+        description="Relation classification: 'DUPLICATE' | 'SIMILAR' | 'RELATED' | 'UPDATE' | 'SUPERSEDE' | 'CONTRADICTION' | 'UNRELATED'",
+    )
+    conflict_score: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Contradiction severity score (0.0 to 1.0)",
+    )
+    confidence: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="Confidence of assessment (0.0 to 1.0)",
+    )
+    user_reason: str = Field(
+        default="",
+        description="Concise user-facing explanation (no CoT, no system prompts)",
+    )
+    tier_applied: str = Field(
+        default="tier_1_rules",
+        description="Assessment tier applied: 'tier_1_rules' | 'tier_2_semantic' | 'tier_3_llm'",
     )
 
 

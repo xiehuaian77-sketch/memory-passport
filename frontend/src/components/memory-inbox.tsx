@@ -211,12 +211,24 @@ export default function MemoryInbox({
                   <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-950/20 p-2.5 text-xs text-amber-300">
                     <div className="flex items-center gap-1.5 font-semibold">
                       <AlertTriangle className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-                      可能与库内已有记忆冲突 ({conflicts.length})
+                      可能与库内已有记忆关联或冲突 ({conflicts.length})
                     </div>
-                    <ul className="mt-1 space-y-1 text-amber-400/80">
+                    <ul className="mt-1.5 space-y-1.5 text-amber-400/90">
                       {conflicts.slice(0, 2).map((c, i) => (
-                        <li key={i} className="truncate">
-                          · {c.existing_key}: {c.existing_content}
+                        <li key={i} className="flex flex-col gap-0.5 border-t border-amber-500/20 pt-1 first:border-0 first:pt-0">
+                          <div className="flex items-center gap-1.5">
+                            {c.classification && (
+                              <span className="rounded bg-amber-500/30 px-1 py-0.2 text-[10px] font-mono font-medium text-amber-200">
+                                {c.classification}
+                              </span>
+                            )}
+                            <span className="truncate font-medium">{c.existing_key}: {c.existing_content}</span>
+                          </div>
+                          {c.user_reason && (
+                            <div className="text-[11px] text-amber-300/80 italic pl-1">
+                              原因: {c.user_reason}
+                            </div>
+                          )}
                         </li>
                       ))}
                     </ul>
