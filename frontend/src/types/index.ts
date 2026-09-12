@@ -47,6 +47,8 @@ export interface ChatMessage {
 
 export interface ChatResponse {
   reply: string;
+  response?: string;
+  conversation_id?: string | null;
   extracted_memories: ExtractedMemory[];
   loaded_memories: Memory[];
 }
@@ -142,4 +144,50 @@ export interface MemoryHistoryResponse {
   memory_id: string;
   total_events: number;
   history: MemoryAuditLog[];
+}
+
+// ---------- Conversations & Candidates (Phase 3.0C & 3.0D) ----------
+
+export interface ConversationMessage {
+  id: string;
+  conversation_id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+}
+
+export interface Conversation {
+  id: string;
+  user_id: string;
+  created_at: string;
+  updated_at: string;
+  messages?: ConversationMessage[];
+}
+
+export interface ConversationMemoryCandidate {
+  id: string;
+  memory_type: 'preference' | 'identity' | 'task' | 'context';
+  key: string;
+  content: string;
+  importance: number;
+  confidence: number;
+  tags: string[] | string;
+  reason: string;
+  source: string;
+  raw_content: string;
+  signature: string;
+}
+
+export interface ConflictItem {
+  conflict_type: 'key_conflict' | 'semantic_conflict';
+  existing_memory_id: string;
+  existing_key: string;
+  existing_content: string;
+  similarity?: number | null;
+  message: string;
+}
+
+export interface ConflictDetectionResponse {
+  has_conflict: boolean;
+  conflicts: ConflictItem[];
 }

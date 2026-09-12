@@ -2,6 +2,10 @@
 
 import type {
   ChatResponse,
+  ConflictDetectionResponse,
+  Conversation,
+  ConversationMessage,
+  ConversationMemoryCandidate,
   ExtractResponse,
   Memory,
   MemoryExplainResponse,
@@ -191,6 +195,34 @@ export async function deleteMemory(
   }
 }
 
+export async function archiveMemory(token: string, id: string): Promise<Memory> {
+  const res = await fetch(`${BASE}/api/memories/${id}/archive`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  });
+  return handleResponse<Memory>(res);
+}
+
+export async function restoreMemory(token: string, id: string): Promise<Memory> {
+  const res = await fetch(`${BASE}/api/memories/${id}/restore`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  });
+  return handleResponse<Memory>(res);
+}
+
+export async function detectConflicts(
+  token: string,
+  data: { key?: string; content: string; memory_type?: string }
+): Promise<ConflictDetectionResponse> {
+  const res = await fetch(`${BASE}/api/memories/detect-conflicts`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(data),
+  });
+  return handleResponse<ConflictDetectionResponse>(res);
+}
+
 export async function exportMemories(token: string): Promise<{
   memories: Memory[];
   exported_at: string;
@@ -235,19 +267,128 @@ export async function searchMemories(
 export async function chat(
   token: string,
   message: string,
-  history: { role: string; content: string }[] = [],
+  conversationIdOrHistory?: string | null | { role: string; content: string }[],
+  history?: { role: string; content: string }[] | string,
   agentRole = 'general'
 ): Promise<ChatResponse> {
+  let convId: string | undefined = undefined;
+  let hist: { role: string; content: string }[] = [];
+  let role = agentRole;
+
+  if (typeof conversationIdOrHistory === 'string') {
+    convId = conversationIdOrHistory || undefined;
+    hist = Array.isArray(history) ? history : [];
+    if (typeof history === 'string') {
+      role = history;
+    }
+  } else if (Array.isArray(conversationIdOrHistory)) {
+    hist = conversationIdOrHistory;
+    if (typeof history === 'string') {
+      role = history;
+    }
+  }
+
   const res = await fetch(`${BASE}/api/chat`, {
     method: 'POST',
     headers: authHeaders(token),
     body: JSON.stringify({
       message,
-      history,
-      agent_role: agentRole,
+      conversation_id: convId,
+      history: hist,
+      agent_role: role,
     }),
   });
   return handleResponse<ChatResponse>(res);
+}
+
+// ---------- Conversations & Candidates (Phase 3.0C & 3.0D) ----------
+
+export async function createConversation(token: string): Promise<Conversation> {
+  const res = await fetch(`${BASE}/api/conversations`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  });
+  return handleResponse<Conversation>(res);
+}
+
+export async function listConversations(
+  token: string,
+  limit = 50
+): Promise<Conversation[]> {
+  const res = await fetch(`${BASE}/api/conversations?limit=${limit}`, {
+    headers: authHeaders(token),
+  });
+  return handleResponse<Conversation[]>(res);
+}
+
+export async function getConversation(
+  token: string,
+  conversationId: string
+): Promise<Conversation> {
+  const res = await fetch(`${BASE}/api/conversations/${conversationId}`, {
+    headers: authHeaders(token),
+  });
+  return handleResponse<Conversation>(res);
+}
+
+export async function getConversationMessages(
+  token: string,
+  conversationId: string,
+  limit = 50
+): Promise<ConversationMessage[]> {
+  const res = await fetch(
+    `${BASE}/api/conversations/${conversationId}/messages?limit=${limit}`,
+    {
+      headers: authHeaders(token),
+    }
+  );
+  return handleResponse<ConversationMessage[]>(res);
+}
+
+export async function deleteConversation(
+  token: string,
+  conversationId: string
+): Promise<void> {
+  const res = await fetch(`${BASE}/api/conversations/${conversationId}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(body.detail || `HTTP ${res.status}`);
+  }
+}
+
+export async function extractMemoryFromConversation(
+  token: string,
+  conversationId: string,
+  messageIds?: string[]
+): Promise<{ conversation_id: string; candidates: ConversationMemoryCandidate[] }> {
+  const res = await fetch(
+    `${BASE}/api/conversations/${conversationId}/extract-memory`,
+    {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify(messageIds ? { message_ids: messageIds } : {}),
+    }
+  );
+  return handleResponse<{ conversation_id: string; candidates: ConversationMemoryCandidate[] }>(res);
+}
+
+export async function confirmMemoryFromConversation(
+  token: string,
+  conversationId: string,
+  candidate: ConversationMemoryCandidate
+): Promise<Memory> {
+  const res = await fetch(
+    `${BASE}/api/conversations/${conversationId}/confirm-memory`,
+    {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify({ candidate }),
+    }
+  );
+  return handleResponse<Memory>(res);
 }
 
 export async function saveExtracted(

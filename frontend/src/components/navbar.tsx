@@ -2,14 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Brain, LayoutDashboard, MessageSquare, User, LogOut } from 'lucide-react';
+import { Brain, LayoutDashboard, MessageSquare, User, LogOut, Settings } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/utils';
 
 const NAV_ITEMS = [
-  { href: '/', label: '首页', icon: Brain },
-  { href: '/dashboard', label: '记忆面板', icon: LayoutDashboard },
   { href: '/chat', label: 'AI 对话', icon: MessageSquare },
+  { href: '/dashboard', label: '记忆中心', icon: LayoutDashboard },
+  { href: '/settings', label: '策略设置', icon: Settings },
   { href: '/identity', label: '身份管理', icon: User },
 ];
 
