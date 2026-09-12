@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
+
+from fastapi import HTTPException, status
 
 if TYPE_CHECKING:
     from app.schemas.memory import ConflictItem, MemoryRetrievalRequest
@@ -57,6 +60,9 @@ async def create_memory(
         version=1,
         source_conversation_id=getattr(data, "source_conversation_id", None),
         source_message_id=getattr(data, "source_message_id", None),
+        valid_from=getattr(data, "valid_from", None),
+        valid_until=getattr(data, "valid_until", None),
+        superseded_by_memory_id=getattr(data, "superseded_by_memory_id", None),
     )
     db.add(mem)
     # First persist Memory to guarantee no data loss if embedding generation fails
@@ -273,6 +279,100 @@ async def restore_memory(
     )
 
     return mem
+
+
+async def supersede_memory(
+    db: AsyncSession,
+    old_memory_id: str,
+    replacement_memory_id: str,
+    user_id: str,
+    valid_until: datetime | None = None,
+) -> Memory:
+    """Supersede an old memory with a replacement memory in an atomic transaction.
+
+    Validates:
+    - old_memory_id != replacement_memory_id (HTTP 400)
+    - Both memories exist and belong to user_id (HTTP 404)
+    - old_memory must not already be superseded (HTTP 409)
+    - replacement_memory must not be superseded (HTTP 400)
+    - valid_until must not be earlier than old_memory.valid_from (HTTP 400)
+    """
+    if old_memory_id == replacement_memory_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A memory cannot supersede itself",
+        )
+
+    old_mem = await get_memory_by_id(db, memory_id=old_memory_id, user_id=user_id)
+    if not old_mem:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Old memory not found",
+        )
+
+    new_mem = await get_memory_by_id(db, memory_id=replacement_memory_id, user_id=user_id)
+    if not new_mem:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Replacement memory not found",
+        )
+
+    if old_mem.status == "superseded":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Memory is already superseded",
+        )
+
+    if new_mem.status == "superseded":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Replacement memory is already superseded",
+        )
+
+    now_utc = datetime.now(timezone.utc)
+    effective_time = valid_until or new_mem.valid_from or now_utc
+    if effective_time.tzinfo is None:
+        effective_time = effective_time.replace(tzinfo=timezone.utc)
+
+    if old_mem.valid_from is not None:
+        old_v_from = old_mem.valid_from
+        if old_v_from.tzinfo is None:
+            old_v_from = old_v_from.replace(tzinfo=timezone.utc)
+        if effective_time < old_v_from:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="valid_until cannot be earlier than valid_from",
+            )
+
+    old_mem.status = "superseded"
+    old_mem.superseded_by_memory_id = new_mem.id
+    old_mem.valid_until = effective_time
+
+    if new_mem.valid_from is None:
+        new_mem.valid_from = effective_time
+
+    await db.flush()
+    await db.refresh(old_mem)
+    await db.refresh(new_mem)
+
+    from app.services import governance_service
+    await governance_service.log_event(
+        db=db,
+        user_id=user_id,
+        action=AuditAction.SUPERSEDE,
+        actor_type=AuditActorType.USER,
+        actor_id=user_id,
+        memory_id=old_mem.id,
+        from_version=old_mem.version,
+        to_version=old_mem.version,
+        metadata={
+            "old_memory_id": old_mem.id,
+            "replacement_memory_id": new_mem.id,
+            "superseded_at": effective_time.isoformat(),
+        },
+    )
+
+    return old_mem
 
 
 async def detect_conflicts(
@@ -613,12 +713,20 @@ async def retrieve_context(
 
     fetch_limit = max(getattr(request, "top_k", 10) * 3, 30)
     status_filter = getattr(request, "status", "active")
+    temporal_mode = getattr(request, "temporal_mode", "current")
+    reference_time = getattr(request, "reference_time", None)
+
+    # If temporal_mode is historical or any, broaden candidate search beyond active
+    search_status = status_filter
+    if temporal_mode in ("historical", "any") and (status_filter == "active"):
+        search_status = None
+
     search_results = await hybrid_search(
         db,
         user_id=user_id,
         query=request.query,
         limit=fetch_limit,
-        status=status_filter,
+        status=search_status,
         embedding_provider=embedding_provider,
     )
 
@@ -630,6 +738,8 @@ async def retrieve_context(
         memory_types=getattr(request, "memory_types", None),
         recency_half_life_days=getattr(request, "recency_half_life_days", 30.0),
         status=status_filter,
+        temporal_mode=temporal_mode,
+        reference_time=reference_time,
     )
     policy = MemoryRetrievalPolicy(policy_config)
     scored_memories = policy.apply(search_results)

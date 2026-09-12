@@ -21,10 +21,13 @@ export interface Memory {
   confidence: number;
   is_shared: boolean;
   tags: string;
-  status?: 'active' | 'archived' | 'conflicted';
+  status?: 'active' | 'archived' | 'conflicted' | 'superseded';
   version?: number;
   source_conversation_id?: string | null;
   source_message_id?: string | null;
+  valid_from?: string | null;
+  valid_until?: string | null;
+  superseded_by_memory_id?: string | null;
   created_at: string;
   updated_at: string;
   expires_at: string | null;

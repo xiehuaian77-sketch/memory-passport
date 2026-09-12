@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # ---------- Memory CRUD ----------
 
@@ -23,10 +23,20 @@ class MemoryCreate(BaseModel):
     is_shared: bool = True
     tags: str = ""  # comma-separated
     status: str = Field(
-        default="active", pattern=r"^(active|archived|conflicted)$"
+        default="active", pattern=r"^(active|archived|conflicted|superseded)$"
     )
     source_conversation_id: str | None = None
     source_message_id: str | None = None
+    valid_from: datetime | None = None
+    valid_until: datetime | None = None
+    superseded_by_memory_id: str | None = None
+
+    @model_validator(mode="after")
+    def validate_valid_time(self) -> "MemoryCreate":
+        if self.valid_from is not None and self.valid_until is not None:
+            if self.valid_until < self.valid_from:
+                raise ValueError("valid_until cannot be earlier than valid_from")
+        return self
 
 
 class MemoryUpdate(BaseModel):
@@ -39,8 +49,18 @@ class MemoryUpdate(BaseModel):
     is_shared: bool | None = None
     tags: str | None = None
     status: str | None = Field(
-        default=None, pattern=r"^(active|archived|conflicted)$"
+        default=None, pattern=r"^(active|archived|conflicted|superseded)$"
     )
+    valid_from: datetime | None = None
+    valid_until: datetime | None = None
+    superseded_by_memory_id: str | None = None
+
+    @model_validator(mode="after")
+    def validate_valid_time(self) -> "MemoryUpdate":
+        if self.valid_from is not None and self.valid_until is not None:
+            if self.valid_until < self.valid_from:
+                raise ValueError("valid_until cannot be earlier than valid_from")
+        return self
 
 
 class MemoryOut(BaseModel):
@@ -61,6 +81,9 @@ class MemoryOut(BaseModel):
     version: int = 1
     source_conversation_id: str | None = None
     source_message_id: str | None = None
+    valid_from: datetime | None = None
+    valid_until: datetime | None = None
+    superseded_by_memory_id: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -425,6 +448,15 @@ class MemoryRetrievalRequest(BaseModel):
     status: str | None = Field(
         default="active", description="Filter by status: active, archived, or None for all"
     )
+    temporal_mode: str = Field(
+        default="current",
+        pattern=r"^(current|historical|any)$",
+        description="Temporal retrieval mode: current (default), historical, any",
+    )
+    reference_time: datetime | None = Field(
+        default=None,
+        description="Reference point in time to evaluate validity against",
+    )
 
     model_config = {"extra": "ignore"}
 
@@ -437,3 +469,17 @@ class MemoryRetrievalRequest(BaseModel):
 
 
 RetrievalRequest = MemoryRetrievalRequest
+
+
+# ---------- Phase 5.0: Supersede ----------
+
+class SupersedeRequest(BaseModel):
+    replacement_memory_id: str = Field(
+        min_length=1, max_length=36, description="ID of the replacement memory"
+    )
+    valid_until: datetime | None = Field(
+        default=None,
+        description="Optional effective end time for old memory; defaults to replacement valid_from or now",
+    )
+
+    model_config = {"extra": "forbid"}

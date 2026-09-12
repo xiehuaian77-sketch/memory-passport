@@ -30,6 +30,7 @@ from app.schemas.memory import (
     SemanticSearchItem,
     SemanticSearchRequest,
     SemanticSearchResponse,
+    SupersedeRequest,
 )
 from app.schemas.governance import (
     MemoryExplainResponse,
@@ -364,6 +365,23 @@ async def restore_memory(
     if not mem:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
     return mem
+
+
+@router.post("/{memory_id}/supersede", response_model=MemoryOut)
+async def supersede_memory_endpoint(
+    memory_id: str,
+    body: SupersedeRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Supersede an old memory with a replacement memory in an atomic transaction."""
+    return await memory_service.supersede_memory(
+        db=db,
+        old_memory_id=memory_id,
+        replacement_memory_id=body.replacement_memory_id,
+        user_id=user.id,
+        valid_until=body.valid_until,
+    )
 
 
 @router.get("/{memory_id}/explain", response_model=MemoryExplainResponse)

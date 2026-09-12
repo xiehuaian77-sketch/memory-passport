@@ -424,3 +424,20 @@ export async function extractMemories(
   });
   return handleResponse<ExtractResponse>(res);
 }
+
+export async function supersedeMemory(
+  token: string,
+  memoryId: string,
+  replacementMemoryId: string,
+  validUntil?: string
+): Promise<Memory> {
+  const res = await fetch(`${BASE}/api/memories/${memoryId}/supersede`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({
+      replacement_memory_id: replacementMemoryId,
+      valid_until: validUntil || undefined,
+    }),
+  });
+  return handleResponse<Memory>(res);
+}

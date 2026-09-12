@@ -38,6 +38,9 @@ async def create(db: AsyncSession, user_id: str, data: MemoryCreate) -> Memory:
         version=1,
         source_conversation_id=getattr(data, "source_conversation_id", None),
         source_message_id=getattr(data, "source_message_id", None),
+        valid_from=getattr(data, "valid_from", None),
+        valid_until=getattr(data, "valid_until", None),
+        superseded_by_memory_id=getattr(data, "superseded_by_memory_id", None),
     )
     db.add(mem)
     await db.flush()

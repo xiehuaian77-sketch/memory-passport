@@ -74,7 +74,7 @@ class Memory(Base):
     # --- Phase 3.1: Memory Lifecycle & Provenance ---
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="active", index=True
-    )  # active | archived | conflicted
+    )  # active | archived | conflicted | superseded
     version: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1
     )
@@ -83,6 +83,17 @@ class Memory(Base):
     )
     source_message_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("conversation_messages.id", ondelete="SET NULL"), nullable=True
+    )
+
+    # --- Phase 5.0: Temporal Memory & Supersession ---
+    valid_from: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    valid_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    superseded_by_memory_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("memories.id", ondelete="SET NULL"), nullable=True, index=True
     )
 
     # Relationship

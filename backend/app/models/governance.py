@@ -1,4 +1,4 @@
-﻿"""Memory Governance & Audit ORM models (Phase 3.2)."""
+"""Memory Governance & Audit ORM models (Phase 3.2)."""
 
 from __future__ import annotations
 
@@ -36,6 +36,7 @@ class AuditAction(str, Enum):
     CONFIRM = "CONFIRM"
     EXTRACT_CANDIDATE = "EXTRACT_CANDIDATE"
     CONFLICT_DETECTED = "CONFLICT_DETECTED"
+    SUPERSEDE = "SUPERSEDE"
 
 
 class MemoryAuditLog(Base):

@@ -39,6 +39,15 @@ class RetrievalPolicyConfig(BaseModel):
     status: str | None = Field(
         default="active", description="Filter by status: active, archived, or None for all"
     )
+    temporal_mode: str = Field(
+        default="current",
+        pattern=r"^(current|historical|any)$",
+        description="Temporal retrieval mode: current (default), historical, any",
+    )
+    reference_time: datetime | None = Field(
+        default=None,
+        description="Optional reference time for temporal filtering (defaults to now)",
+    )
 
     model_config = {"extra": "forbid"}
 
@@ -102,7 +111,10 @@ class MemoryRetrievalPolicy:
         if not candidates:
             return []
 
-        ref_now = now if now is not None else datetime.now(timezone.utc)
+        ref_now = self.config.reference_time or now or datetime.now(timezone.utc)
+        if ref_now.tzinfo is None:
+            ref_now = ref_now.replace(tzinfo=timezone.utc)
+
         allowed_types = (
             set(self.config.memory_types) if self.config.memory_types else None
         )
@@ -115,10 +127,38 @@ class MemoryRetrievalPolicy:
             sim = getattr(c, "similarity", None)
             kw_sc = getattr(c, "keyword_score", None)
 
-            # 0. Filter: status
-            if self.config.status is not None:
-                mem_status = getattr(mem, "status", None) or "active"
-                if mem_status != self.config.status:
+            mem_status = getattr(mem, "status", None) or "active"
+            v_from = getattr(mem, "valid_from", None)
+            v_until = getattr(mem, "valid_until", None)
+            superseded_by = getattr(mem, "superseded_by_memory_id", None)
+
+            if v_from is not None and v_from.tzinfo is None:
+                v_from = v_from.replace(tzinfo=timezone.utc)
+            if v_until is not None and v_until.tzinfo is None:
+                v_until = v_until.replace(tzinfo=timezone.utc)
+
+            # 0. Temporal Filtering
+            mode = self.config.temporal_mode
+            if mode == "current":
+                if mem_status != "active":
+                    continue
+                if superseded_by is not None or mem_status == "superseded":
+                    continue
+                if v_until is not None and v_until <= ref_now:
+                    continue
+                if v_from is not None and v_from > ref_now:
+                    continue
+            elif mode == "historical":
+                is_historical = (
+                    mem_status == "superseded"
+                    or superseded_by is not None
+                    or (v_until is not None and v_until <= ref_now)
+                    or mem_status == "archived"
+                )
+                if not is_historical:
+                    continue
+            elif mode == "any":
+                if self.config.status is not None and mem_status != self.config.status:
                     continue
 
             # 1. Filter: min_relevance (hybrid_score)

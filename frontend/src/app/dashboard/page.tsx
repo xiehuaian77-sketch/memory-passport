@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
+  History,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -36,7 +37,7 @@ const CATEGORIES: { value: MemoryCategory | ''; label: string }[] = [
   { value: 'context', label: '上下文' },
 ];
 
-type StatusTab = 'active' | 'inbox' | 'archived' | 'conflicted' | 'all';
+type StatusTab = 'active' | 'inbox' | 'archived' | 'conflicted' | 'superseded' | 'all';
 
 const PAGE_SIZE = 12;
 
@@ -117,6 +118,8 @@ function MemoryCenterContent() {
           ? 'archived'
           : activeTab === 'conflicted'
           ? 'conflicted'
+          : activeTab === 'superseded'
+          ? 'superseded'
           : 'active';
 
       const offset = (page - 1) * PAGE_SIZE;
@@ -438,6 +441,21 @@ function MemoryCenterContent() {
 
         <button
           onClick={() => {
+            setActiveTab('superseded');
+            setPage(1);
+          }}
+          className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+            activeTab === 'superseded'
+              ? 'bg-purple-600 text-white shadow'
+              : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+          }`}
+        >
+          <History className="h-4 w-4" />
+          已更迭 (Superseded)
+        </button>
+
+        <button
+          onClick={() => {
             setActiveTab('all');
             setPage(1);
           }}
@@ -550,11 +568,15 @@ function MemoryCenterContent() {
                   ? '暂无已归档记忆'
                   : activeTab === 'conflicted'
                   ? '无潜在冲突记忆'
+                  : activeTab === 'superseded'
+                  ? '暂无已更迭历史记忆'
                   : '还没有匹配的记忆记录'}
               </p>
               <p className="text-xs text-slate-500 max-w-sm">
                 {activeTab === 'archived'
                   ? '将长期不用的记忆归档后，AI 在生成回答时将不再加载它。'
+                  : activeTab === 'superseded'
+                  ? '当旧事实被新事实取代时，已更迭记忆将作为历史留存，AI 检索默认优先关注现行事实。'
                   : '在 AI 对话中提炼或点击「手动添加」，构建你的专属 Memory Passport。'}
               </p>
             </div>

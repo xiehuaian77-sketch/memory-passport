@@ -40,6 +40,7 @@ export default function MemoryCard({
   const cat = memory.category as MemoryCategory;
   const isArchived = memory.status === 'archived';
   const isConflicted = memory.status === 'conflicted';
+  const isSuperseded = memory.status === 'superseded';
 
   return (
     <div
@@ -49,6 +50,8 @@ export default function MemoryCard({
           ? 'border-slate-800 bg-slate-900/40 opacity-75'
           : isConflicted
           ? 'border-amber-500/30 bg-amber-950/10'
+          : isSuperseded
+          ? 'border-purple-500/30 bg-purple-950/10'
           : 'border-slate-700 bg-slate-800/50'
       )}
     >
@@ -77,6 +80,16 @@ export default function MemoryCard({
           {isConflicted && (
             <span className="flex items-center gap-0.5 rounded bg-amber-500/20 border border-amber-500/30 px-1.5 py-0.2 text-[10px] font-medium text-amber-300">
               <AlertTriangle className="h-2.5 w-2.5" /> 冲突预警
+            </span>
+          )}
+          {isSuperseded && (
+            <span className="flex items-center gap-0.5 rounded bg-purple-500/20 border border-purple-500/30 px-1.5 py-0.2 text-[10px] font-medium text-purple-300">
+              <History className="h-2.5 w-2.5" /> 已更迭
+            </span>
+          )}
+          {(memory.valid_from || memory.valid_until) && (
+            <span className="rounded bg-slate-800 border border-slate-700/60 px-1.5 py-0.2 text-[10px] font-mono text-slate-400">
+              {memory.valid_from ? formatDate(memory.valid_from) : '起始'} ~ {memory.valid_until ? formatDate(memory.valid_until) : '至今'}
             </span>
           )}
         </div>
