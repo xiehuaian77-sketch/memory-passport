@@ -15,7 +15,7 @@ User Message
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Any, Sequence
 
 from app.providers.llm_provider import (
     AIProvider,
@@ -52,10 +52,17 @@ class ChatResult(str):
     """String subclass containing response text and associated conversation_id."""
 
     conversation_id: str | None
+    loaded_memories: list[Any]
 
-    def __new__(cls, content: str, conversation_id: str | None = None):
+    def __new__(
+        cls,
+        content: str,
+        conversation_id: str | None = None,
+        loaded_memories: list[Any] | None = None,
+    ):
         instance = super().__new__(cls, content)
         instance.conversation_id = conversation_id
+        instance.loaded_memories = loaded_memories or []
         return instance
 
 
@@ -244,7 +251,24 @@ class ChatService:
             )
             await db.commit()
 
-        return ChatResult(reply, conversation_id=current_conv_id)
+        # Collect loaded memory summaries for client verification & indicator truthfulness
+        loaded_summaries: list[dict[str, Any]] = []
+        if context and context.items:
+            loaded_summaries = [
+                {
+                    "id": item.id,
+                    "memory_type": item.memory_type,
+                    "content": item.content,
+                    "similarity": item.hybrid_score,
+                }
+                for item in context.items
+            ]
+
+        return ChatResult(
+            reply,
+            conversation_id=current_conv_id,
+            loaded_memories=loaded_summaries,
+        )
 
 
 def get_chat_service() -> ChatService:

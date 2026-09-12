@@ -249,7 +249,7 @@ function MemoryCenterContent() {
     }
   };
 
-  // Candidate Edit and Confirm (Atomic 2-step flow)
+  // Candidate Edit and Confirm (Single Atomic DB Transaction)
   const handleEditAndConfirmCandidate = async (
     cand: ConversationMemoryCandidate,
     editedContent: string,
@@ -258,16 +258,14 @@ function MemoryCenterContent() {
     if (!token) return;
     try {
       const convId = (cand as any).source_conversation_id || (cand as any).conversation_id || 'default_conv';
-      // Step 1: Confirm original HMAC candidate (v1)
-      const confirmedMem = await api.confirmMemoryFromConversation(token, convId, cand);
-      // Step 2: Immediately apply user modifications (v2 with user audit)
-      await api.updateMemory(token, confirmedMem.id, {
+      // Atomic: validates original HMAC and persists user edits within the same DB transaction
+      await api.confirmMemoryFromConversation(token, convId, cand, {
         content: editedContent,
         key: editedKey,
       });
       const remaining = candidates.filter((c) => c.id !== cand.id);
       syncCandidates(remaining);
-      showFeedback(`已保存修改并入库 (v2): ${editedKey}`);
+      showFeedback(`已保存修改并入库 (原子事务): ${editedKey}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : '保存修改失败');
     }

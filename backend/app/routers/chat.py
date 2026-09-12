@@ -53,12 +53,13 @@ async def chat(
                 reply = await service.chat(message=body.message, user_id=user.id)
 
         conv_id = getattr(reply, "conversation_id", None) or body.conversation_id
+        loaded_mems = getattr(reply, "loaded_memories", [])
         return ChatResponse(
             response=str(reply),
             reply=str(reply),
             conversation_id=conv_id,
             extracted_memories=[],
-            loaded_memories=[],
+            loaded_memories=loaded_mems,
         )
     except ConversationNotFoundError as exc:
         raise HTTPException(

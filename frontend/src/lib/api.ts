@@ -378,14 +378,18 @@ export async function extractMemoryFromConversation(
 export async function confirmMemoryFromConversation(
   token: string,
   conversationId: string,
-  candidate: ConversationMemoryCandidate
+  candidate: ConversationMemoryCandidate,
+  userEdits?: { content?: string; key?: string; tags?: string }
 ): Promise<Memory> {
   const res = await fetch(
     `${BASE}/api/conversations/${conversationId}/confirm-memory`,
     {
       method: 'POST',
       headers: authHeaders(token),
-      body: JSON.stringify({ candidate }),
+      body: JSON.stringify({
+        candidate,
+        user_edits: userEdits || undefined,
+      }),
     }
   );
   return handleResponse<Memory>(res);

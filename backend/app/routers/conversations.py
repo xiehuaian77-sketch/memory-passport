@@ -19,6 +19,7 @@ from app.schemas.memory import (
     ConversationOut,
     MemoryCreate,
     MemoryOut,
+    MemoryUpdate,
 )
 from app.services import extraction_service, memory_service
 
@@ -210,4 +211,18 @@ async def confirm_memory_from_conversation(
         data=mem_create,
         auto_embed=True,
     )
+
+    # Atomic Edit & Save support: apply user edits in the exact same transaction
+    if body.user_edits and (body.user_edits.content or body.user_edits.key):
+        update_data = MemoryUpdate(
+            key=body.user_edits.key or created_mem.key,
+            content=body.user_edits.content or created_mem.content,
+            tags=body.user_edits.tags if body.user_edits.tags is not None else created_mem.tags,
+        )
+        created_mem = await memory_service.update_memory(
+            db=db,
+            memory=created_mem,
+            data=update_data,
+        )
+
     return MemoryOut.model_validate(created_mem)

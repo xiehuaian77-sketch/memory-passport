@@ -206,11 +206,11 @@ export default function ChatInterface({
               >
                 <p className="whitespace-pre-wrap">{msg.content}</p>
 
-                {/* Assistant memory reference badge */}
-                {msg.role === 'assistant' && (
+                {/* Assistant memory reference badge (truthful indicator) */}
+                {msg.role === 'assistant' && msg.loaded_memories && msg.loaded_memories.length > 0 && (
                   <div className="mt-2 flex items-center gap-1 text-[11px] text-cyan-400/80 border-t border-slate-700/50 pt-1.5">
                     <Lightbulb className="h-3 w-3" />
-                    <span>已结合长期记忆库上下文</span>
+                    <span>已结合长期记忆 ({msg.loaded_memories.length} 条参考)</span>
                   </div>
                 )}
               </div>

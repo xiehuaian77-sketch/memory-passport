@@ -40,9 +40,17 @@ export interface SearchResult {
   score: number;
 }
 
+export interface LoadedMemoryItem {
+  id: string;
+  memory_type: string;
+  content: string;
+  similarity?: number;
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
+  loaded_memories?: LoadedMemoryItem[];
 }
 
 export interface ChatResponse {
@@ -50,7 +58,7 @@ export interface ChatResponse {
   response?: string;
   conversation_id?: string | null;
   extracted_memories: ExtractedMemory[];
-  loaded_memories: Memory[];
+  loaded_memories: LoadedMemoryItem[];
 }
 
 export interface ExtractedMemory {

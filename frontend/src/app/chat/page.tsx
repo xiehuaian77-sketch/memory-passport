@@ -125,7 +125,11 @@ export default function ChatPage() {
 
       setMessages([
         ...optimisticMessages,
-        { role: 'assistant', content: res.reply || res.response || '' },
+        {
+          role: 'assistant',
+          content: res.reply || res.response || '',
+          loaded_memories: res.loaded_memories,
+        },
       ]);
     } catch (err) {
       setMessages([

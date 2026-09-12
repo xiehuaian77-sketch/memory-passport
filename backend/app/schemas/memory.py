@@ -151,7 +151,7 @@ class ChatResponse(BaseModel):
         default=None, description="Conversation ID associated with this turn"
     )
     extracted_memories: list[ExtractedMemory] = Field(default_factory=list)
-    loaded_memories: list[MemoryOut] = Field(default_factory=list)
+    loaded_memories: list[Any] = Field(default_factory=list)
 
     model_config = {"extra": "ignore"}
 
@@ -237,8 +237,17 @@ class ConversationConfirmCandidate(BaseModel):
     model_config = {"extra": "ignore"}
 
 
+class CandidateUserEdits(BaseModel):
+    key: str | None = Field(default=None, max_length=200)
+    content: str | None = Field(default=None, min_length=1)
+    tags: str | None = None
+
+    model_config = {"extra": "ignore"}
+
+
 class ConversationConfirmRequest(BaseModel):
     candidate: ConversationConfirmCandidate
+    user_edits: CandidateUserEdits | None = None
 
     model_config = {"extra": "ignore"}
 
