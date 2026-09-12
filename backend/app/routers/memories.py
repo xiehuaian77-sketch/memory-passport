@@ -23,12 +23,14 @@ from app.schemas.memory import (
     MemoryExport,
     MemoryImportItem,
     MemoryOut,
+    MemoryRetrievalRequest,
     MemoryUpdate,
     SemanticSearchItem,
     SemanticSearchRequest,
     SemanticSearchResponse,
 )
 from app.services import memory_service
+from app.services.context_assembler import AssembledContext
 from app.services.extraction_service import extract_memory_candidates
 
 router = APIRouter(prefix="/api/memories", tags=["memories"])
@@ -168,6 +170,32 @@ async def hybrid_search_endpoint(
         limit=body.limit,
         search_mode="hybrid",
     )
+
+
+@router.post("/retrieve", response_model=AssembledContext)
+async def retrieve_memories_endpoint(
+    body: MemoryRetrievalRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Retrieve assembled, budgeted context of memories for the authenticated user."""
+    try:
+        return await memory_service.retrieve_context(db, user_id=user.id, request=body)
+    except EmbeddingConfigError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Embedding service is not configured",
+        )
+    except EmbeddingCommunicationError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to communicate with embedding service",
+        )
+    except EmbeddingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Embedding service error: {exc.__class__.__name__}",
+        )
 
 
 @router.post("/backfill", response_model=BackfillResponse)

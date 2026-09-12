@@ -66,7 +66,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
-from app.schemas.memory import SemanticSearchRequest, SemanticSearchResponse
+from app.schemas.memory import (
+    MemoryRetrievalRequest,
+    SemanticSearchRequest,
+    SemanticSearchResponse,
+)
+from app.services.context_assembler import AssembledContext
 
 
 @app.post("/memories/search", response_model=SemanticSearchResponse, tags=["memories"])
@@ -79,3 +84,15 @@ async def root_memories_search(
     from app.routers.memories import semantic_search as memories_search
 
     return await memories_search(body, user=user, db=db)
+
+
+@app.post("/memories/retrieve", response_model=AssembledContext, tags=["memories"])
+async def root_memories_retrieve(
+    body: MemoryRetrievalRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Direct alias for /api/memories/retrieve."""
+    from app.routers.memories import retrieve_memories_endpoint
+
+    return await retrieve_memories_endpoint(body, user=user, db=db)

@@ -15,10 +15,15 @@ from app.models.user import User
 
 
 async def get_current_user(
-    authorization: str = Header(..., description="Bearer <token>"),
+    authorization: str | None = Header(default=None, description="Bearer <token>"),
     db: AsyncSession = Depends(get_db),
 ) -> User:
     """Extract and validate JWT from the Authorization header."""
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing Authorization header",
+        )
     if not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.schemas.memory import MemoryRetrievalRequest
+    from app.services.context_assembler import AssembledContext
 
 from app.models.memory import Memory
 from app.providers.embedding_provider import (
@@ -391,3 +396,49 @@ async def delete_all_user_memories(db: AsyncSession, user_id: str) -> int:
     stmt = delete(Memory).where(Memory.user_id == user_id)
     result = await db.execute(stmt)
     return result.rowcount  # type: ignore[union-attr]
+
+
+async def retrieve_context(
+    db: AsyncSession,
+    user_id: str,
+    request: MemoryRetrievalRequest,
+    *,
+    embedding_provider: EmbeddingProvider | None = None,
+) -> AssembledContext:
+    """End-to-end memory retrieval pipeline (Phase 2.5C).
+
+    Pipeline:
+    1. Hybrid Search (fetch candidates bounded by top_k * 3, user-isolated)
+    2. Retrieval Policy (filtering, recency decay, re-ranking, top-k slice)
+    3. Context Assembly (deduplication by ID, content truncation, budget enforcement)
+    """
+    from app.services.context_assembler import ContextAssembler, ContextAssemblyConfig
+    from app.services.retrieval_policy import MemoryRetrievalPolicy, RetrievalPolicyConfig
+
+    fetch_limit = max(getattr(request, "top_k", 10) * 3, 30)
+    search_results = await hybrid_search(
+        db,
+        user_id=user_id,
+        query=request.query,
+        limit=fetch_limit,
+        embedding_provider=embedding_provider,
+    )
+
+    policy_config = RetrievalPolicyConfig(
+        top_k=getattr(request, "top_k", 10),
+        min_relevance=getattr(request, "min_relevance", 0.30),
+        min_importance=getattr(request, "min_importance", 0.0),
+        min_confidence=getattr(request, "min_confidence", 0.0),
+        memory_types=getattr(request, "memory_types", None),
+        recency_half_life_days=getattr(request, "recency_half_life_days", 30.0),
+    )
+    policy = MemoryRetrievalPolicy(policy_config)
+    scored_memories = policy.apply(search_results)
+
+    assembly_config = ContextAssemblyConfig(
+        max_memories=getattr(request, "max_memories", 10),
+        max_content_chars=getattr(request, "max_content_chars", 500),
+        max_context_chars=getattr(request, "max_context_chars", 4000),
+    )
+    assembler = ContextAssembler(assembly_config)
+    return assembler.assemble(scored_memories)

@@ -225,3 +225,52 @@ class BackfillResponse(BaseModel):
     succeeded: int
     failed: int
     remaining: int
+
+
+# ---------- Phase 2.5C: Retrieval API ----------
+
+class MemoryRetrievalRequest(BaseModel):
+    """Request payload for context retrieval (Phase 2.5C)."""
+
+    query: str = Field(
+        min_length=1, max_length=2000, description="Query string for search"
+    )
+    top_k: int = Field(
+        default=10, ge=1, le=50, description="Max search candidates to keep in policy"
+    )
+    min_relevance: float = Field(
+        default=0.30, ge=0.0, le=1.0, description="Minimum hybrid score"
+    )
+    min_importance: float = Field(
+        default=0.0, ge=0.0, le=1.0, description="Minimum importance"
+    )
+    min_confidence: float = Field(
+        default=0.0, ge=0.0, le=1.0, description="Minimum confidence"
+    )
+    memory_types: list[str] | None = Field(
+        default=None, description="Allowed memory categories/types"
+    )
+    recency_half_life_days: float = Field(
+        default=30.0, gt=0.0, description="Recency decay half life in days"
+    )
+    max_memories: int = Field(
+        default=10, ge=1, description="Max memories in assembled context"
+    )
+    max_content_chars: int = Field(
+        default=500, ge=1, description="Max characters per memory content"
+    )
+    max_context_chars: int = Field(
+        default=4000, ge=1, description="Max total characters in context"
+    )
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator("query")
+    @classmethod
+    def validate_query(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Query string must not be empty or whitespace only")
+        return v.strip()
+
+
+RetrievalRequest = MemoryRetrievalRequest
