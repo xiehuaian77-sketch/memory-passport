@@ -128,3 +128,23 @@ async def delete_conversation(
     )
     result = await db.execute(stmt)
     return result.rowcount > 0  # type: ignore[union-attr]
+
+
+async def get_messages_by_ids(
+    db: AsyncSession,
+    conversation_id: str,
+    message_ids: Sequence[str],
+) -> list[ConversationMessage]:
+    """Fetch messages belonging strictly to conversation_id with matching IDs."""
+    if not message_ids:
+        return []
+    stmt = (
+        select(ConversationMessage)
+        .where(
+            ConversationMessage.conversation_id == conversation_id,
+            ConversationMessage.id.in_(message_ids),
+        )
+        .order_by(ConversationMessage.created_at.asc())
+    )
+    result = await db.execute(stmt)
+    return list(result.scalars().all())

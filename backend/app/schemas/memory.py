@@ -145,6 +145,63 @@ class ConversationCreate(BaseModel):
     pass
 
 
+class ConversationExtractRequest(BaseModel):
+    message_ids: list[str] | None = Field(
+        default=None, description="Optional list of specific message IDs to analyze"
+    )
+
+
+class ConversationMemoryCandidate(BaseModel):
+    id: str = Field(description="Unique candidate identifier")
+    memory_type: str = Field(
+        default="preference",
+        pattern=r"^(preference|identity|task|context)$",
+        description="Memory category",
+    )
+    key: str = Field(min_length=1, max_length=200, description="Short identifier key")
+    content: str = Field(min_length=1, description="Extracted memory content")
+    importance: float = Field(default=0.5, ge=0.0, le=1.0)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    tags: list[str] = Field(default_factory=list)
+    reason: str = Field(default="", description="Reason for candidate extraction")
+    source: str = Field(default="conversation")
+    raw_content: str = Field(default="", description="Source dialogue context")
+    signature: str = Field(
+        default="",
+        description="Cryptographic HMAC signature binding candidate to user, conversation, and exact fields",
+    )
+
+
+class ConversationExtractResponse(BaseModel):
+    conversation_id: str
+    candidates: list[ConversationMemoryCandidate] = Field(default_factory=list)
+
+
+class ConversationConfirmCandidate(BaseModel):
+    id: str = Field(min_length=1, description="Unique candidate identifier from extraction")
+    signature: str = Field(min_length=1, description="Cryptographic HMAC signature")
+    memory_type: str = Field(
+        default="preference",
+        pattern=r"^(preference|identity|task|context)$",
+        description="Memory category",
+    )
+    key: str | None = Field(default=None, max_length=200)
+    content: str = Field(min_length=1)
+    importance: float = Field(default=0.5, ge=0.0, le=1.0)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    tags: list[str] | str = Field(default_factory=list)
+    raw_content: str = Field(default="")
+    is_shared: bool = True
+
+    model_config = {"extra": "ignore"}
+
+
+class ConversationConfirmRequest(BaseModel):
+    candidate: ConversationConfirmCandidate
+
+    model_config = {"extra": "ignore"}
+
+
 class ExtractedCandidate(BaseModel):
     category: str = Field(
         default="preference",
