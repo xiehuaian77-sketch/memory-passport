@@ -44,8 +44,11 @@ class User(Base):
         DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
     )
 
-    # Relationship
+    # Relationships
     memories: Mapped[list["Memory"]] = relationship(  # noqa: F821
+        back_populates="user", cascade="all, delete-orphan", lazy="selectin"
+    )
+    conversations: Mapped[list["Conversation"]] = relationship(  # noqa: F821
         back_populates="user", cascade="all, delete-orphan", lazy="selectin"
     )
 

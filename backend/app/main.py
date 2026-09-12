@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import init_db
-from app.routers import auth, chat, mcp, memories, search
+from app.routers import auth, chat, conversations, mcp, memories, search
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -44,6 +44,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(memories.router)
 app.include_router(search.router)
+app.include_router(conversations.router)
 app.include_router(chat.router)
 app.include_router(mcp.router)
 

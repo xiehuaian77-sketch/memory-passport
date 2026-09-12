@@ -14,7 +14,11 @@ from app.providers.llm_provider import (
 )
 from app.schemas.memory import ChatRequest, ChatResponse, MemoryCreate, MemoryOut
 from app.services import memory_service
-from app.services.chat_service import ChatService, get_chat_service
+from app.services.chat_service import (
+    ChatService,
+    ConversationNotFoundError,
+    get_chat_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,18 +32,39 @@ async def chat(
     db: AsyncSession = Depends(get_db),
     service: ChatService = Depends(get_chat_service),
 ):
-    """Chat with AI with automatic memory retrieval and context injection (Phase 3.0B)."""
+    """Chat with AI with automatic memory retrieval, conversation history, and context injection (Phase 3.0C)."""
     try:
         try:
-            reply = await service.chat(message=body.message, user_id=user.id, db=db)
+            reply = await service.chat(
+                message=body.message,
+                user_id=user.id,
+                conversation_id=body.conversation_id,
+                db=db,
+            )
         except TypeError:
-            reply = await service.chat(message=body.message, user_id=user.id)
+            # Fallback for custom mock test services
+            try:
+                reply = await service.chat(
+                    message=body.message,
+                    user_id=user.id,
+                    db=db,
+                )
+            except TypeError:
+                reply = await service.chat(message=body.message, user_id=user.id)
+
+        conv_id = getattr(reply, "conversation_id", None) or body.conversation_id
         return ChatResponse(
-            response=reply,
-            reply=reply,
+            response=str(reply),
+            reply=str(reply),
+            conversation_id=conv_id,
             extracted_memories=[],
             loaded_memories=[],
         )
+    except ConversationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found",
+        ) from exc
     except LLMConfigError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

@@ -75,6 +75,9 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=10000, description="User chat message")
+    conversation_id: str | None = Field(
+        default=None, description="Optional conversation ID to append message to"
+    )
     history: list[ChatMessage] = Field(default_factory=list)
     agent_role: str = Field(
         default="general",
@@ -103,6 +106,9 @@ class ChatResponse(BaseModel):
     reply: str | None = Field(
         default=None, description="Compatibility alias for response"
     )
+    conversation_id: str | None = Field(
+        default=None, description="Conversation ID associated with this turn"
+    )
     extracted_memories: list[ExtractedMemory] = Field(default_factory=list)
     loaded_memories: list[MemoryOut] = Field(default_factory=list)
 
@@ -113,6 +119,30 @@ class ChatResponse(BaseModel):
             self.reply = self.response
         if not self.response and self.reply:
             self.response = self.reply
+
+
+class ConversationMessageOut(BaseModel):
+    id: str
+    conversation_id: str
+    role: str
+    content: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ConversationOut(BaseModel):
+    id: str
+    user_id: str
+    created_at: datetime
+    updated_at: datetime
+    messages: list[ConversationMessageOut] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
+
+class ConversationCreate(BaseModel):
+    pass
 
 
 class ExtractedCandidate(BaseModel):
