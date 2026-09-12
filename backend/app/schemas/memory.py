@@ -8,14 +8,18 @@ from pydantic import BaseModel, Field
 # ---------- Memory CRUD ----------
 
 class MemoryCreate(BaseModel):
-    category: str = Field(
-        default="preference",
+    memory_type: str | None = Field(
+        default=None,
+        description="Memory type; kept as string for extensibility.",
         pattern=r"^(preference|identity|task|context)$",
     )
+    # Backward compatibility: accept old field name "category"
+    category: str | None = Field(default=None, alias="category")
     key: str = Field(max_length=200)
     content: str = Field(min_length=1)
     source: str = Field(default="manual", pattern=r"^(manual|ai_extracted|imported)$")
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    importance: float = Field(default=0.5, ge=0.0, le=1.0)
     is_shared: bool = True
     tags: str = ""  # comma-separated
 
@@ -88,7 +92,27 @@ class ChatResponse(BaseModel):
     reply: str
     extracted_memories: list[ExtractedMemory] = Field(default_factory=list)
     loaded_memories: list[MemoryOut] = Field(default_factory=list)
+class ExtractedCandidate(BaseModel):
+    category: str = Field(
+        default="preference",
+        pattern=r"^(preference|identity|task|context)$",
+        description="Memory category",
+    )
+    key: str = Field(min_length=1, max_length=200, description="Short identifier key")
+    content: str = Field(min_length=1, description="Extracted memory content")
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="Extraction confidence")
+    importance: float = Field(default=0.5, ge=0.0, le=1.0, description="Memory importance")
+    tags: str = Field(default="", description="Comma-separated tags")
+    is_shared: bool = Field(default=True, description="Whether memory is shared with agents")
 
+
+class ExtractRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=5000, description="Raw user text to extract memories from")
+
+
+class ExtractResponse(BaseModel):
+    raw_content: str
+    candidates: list[ExtractedCandidate] = Field(default_factory=list)
 
 # ---------- MCP ----------
 

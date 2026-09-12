@@ -2,6 +2,7 @@
 
 import type {
   ChatResponse,
+  ExtractResponse,
   Memory,
   SearchResult,
   TokenResponse,
@@ -200,4 +201,16 @@ export async function saveExtracted(
     body: JSON.stringify(items),
   });
   return handleResponse<Memory[]>(res);
+}
+
+export async function extractMemories(
+  token: string,
+  text: string
+): Promise<ExtractResponse> {
+  const res = await fetch(`${BASE}/api/memories/extract`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({ text }),
+  });
+  return handleResponse<ExtractResponse>(res);
 }

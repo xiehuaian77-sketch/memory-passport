@@ -25,11 +25,22 @@ class Memory(Base):
     user_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    # Store the raw user input for extraction preview
+    raw_content: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
     # --- Core fields ---
-    category: Mapped[str] = mapped_column(
+    memory_type: Mapped[str] = mapped_column(
         String(50), nullable=False, default="preference", index=True
     )  # preference | identity | task | context
+
+    @property
+    def category(self) -> str:
+        """Compatibility property returning `memory_type`.
+        Allows Pydantic `MemoryOut` to access `category` while the
+        canonical DB column remains `memory_type`.
+        """
+        return self.memory_type
+
     key: Mapped[str] = mapped_column(String(200), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
 
@@ -41,7 +52,8 @@ class Memory(Base):
         String(50), nullable=False, default="manual"
     )  # manual | ai_extracted | imported
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
-    is_shared: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_shared: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    importance: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
     tags: Mapped[str] = mapped_column(
         Text, nullable=False, default=""
     )  # comma-separated tags
@@ -60,4 +72,4 @@ class Memory(Base):
     user: Mapped["User"] = relationship(back_populates="memories")  # noqa: F821
 
     def __repr__(self) -> str:
-        return f"<Memory [{self.category}] {self.key}: {self.content[:40]}>"
+        return f"<Memory [{self.memory_type}] {self.key}: {self.content[:40]}>"

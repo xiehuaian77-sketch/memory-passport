@@ -15,9 +15,10 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 1440  # 24 hours
 
     # --- LLM Provider (OpenAI-compatible) ---
-    llm_base_url: str = "https://api.openai.com/v1"
+    llm_provider: str = "qwen"
+    llm_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     llm_api_key: str = ""
-    llm_model: str = "gpt-4o-mini"
+    llm_model: str = "qwen-plus"
 
     # --- Embedding Provider (OpenAI-compatible) ---
     embedding_base_url: str = "https://api.openai.com/v1"

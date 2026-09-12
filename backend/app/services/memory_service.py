@@ -36,14 +36,17 @@ async def create_memory(
         except Exception as e:
             logger.warning("Embedding generation failed, saving without: %s", e)
 
+    # Prefer explicit category field; fallback to memory_type or default
+    mem_type = data.category if getattr(data, "category", None) is not None else (data.memory_type or "preference")
     mem = Memory(
         user_id=user_id,
-        category=data.category,
+        memory_type=mem_type,
         key=data.key,
         content=data.content,
         embedding_json=embedding_json,
         source=data.source,
         confidence=data.confidence,
+        importance=data.importance,
         is_shared=data.is_shared,
         tags=data.tags,
     )
@@ -63,7 +66,7 @@ async def get_memories(
     """Get memories for a user, optionally filtered by category."""
     stmt = select(Memory).where(Memory.user_id == user_id)
     if category:
-        stmt = stmt.where(Memory.category == category)
+        stmt = stmt.where(Memory.memory_type == category)
     stmt = stmt.order_by(Memory.updated_at.desc()).offset(offset).limit(limit)
     result = await db.execute(stmt)
     return result.scalars().all()
@@ -82,19 +85,22 @@ async def update_memory(
     db: AsyncSession, memory: Memory, data: MemoryUpdate
 ) -> Memory:
     """Update memory fields and re-embed if content changed."""
+    # Track if key/content changed for re-embedding
     changed = False
     for field, value in data.model_dump(exclude_unset=True).items():
+        if field == "category":
+            # Update canonical column memory_type
+            memory.memory_type = value
+            continue
         setattr(memory, field, value)
         if field in ("key", "content"):
             changed = True
-
     if changed:
         try:
             vec = await generate_embedding(f"{memory.key}: {memory.content}")
             memory.embedding_json = embedding_to_json(vec)
         except Exception as e:
             logger.warning("Re-embedding failed: %s", e)
-
     await db.flush()
     await db.refresh(memory)
     return memory
@@ -126,7 +132,7 @@ async def search_memories(
             Memory.embedding_json.isnot(None),
         )
         if category:
-            stmt = stmt.where(Memory.category == category)
+            stmt = stmt.where(Memory.memory_type == category)
         result = await db.execute(stmt)
         memories = result.scalars().all()
 
@@ -148,7 +154,7 @@ async def search_memories(
     # Fallback: keyword/substring match over memories
     stmt = select(Memory).where(Memory.user_id == user_id)
     if category:
-        stmt = stmt.where(Memory.category == category)
+        stmt = stmt.where(Memory.memory_type == category)
     result = await db.execute(stmt)
     all_memories = result.scalars().all()
 

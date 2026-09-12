@@ -9,6 +9,8 @@ from app.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
 from app.schemas.memory import (
+    ExtractRequest,
+    ExtractResponse,
     MemoryCreate,
     MemoryExport,
     MemoryImportItem,
@@ -16,6 +18,7 @@ from app.schemas.memory import (
     MemoryUpdate,
 )
 from app.services import memory_service
+from app.services.extraction_service import extract_memory_candidates
 
 router = APIRouter(prefix="/api/memories", tags=["memories"])
 
@@ -44,6 +47,30 @@ async def create_memory(
     """Create a new memory."""
     mem = await memory_service.create_memory(db, user.id, body)
     return mem
+
+
+@router.post("/extract", response_model=ExtractResponse)
+async def extract_memory_endpoint(
+    body: ExtractRequest,
+    user: User = Depends(get_current_user),
+):
+    """Extract candidate memories from raw text without persisting to DB."""
+    return await extract_memory_candidates(body.text)
+
+
+@router.post("/save-extracted", response_model=list[MemoryOut], status_code=status.HTTP_201_CREATED)
+async def save_extracted_memories(
+    items: list[MemoryCreate],
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Save user-confirmed memory candidates to DB with strict user isolation."""
+    saved = []
+    for item in items:
+        item_data = item.model_copy(update={"source": "ai_extracted"})
+        mem = await memory_service.create_memory(db, user.id, item_data)
+        saved.append(mem)
+    return saved
 
 
 @router.get("/{memory_id}", response_model=MemoryOut)

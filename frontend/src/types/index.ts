@@ -54,6 +54,21 @@ export interface ExtractedMemory {
   confidence: number;
 }
 
+export interface ExtractedCandidate {
+  category: MemoryCategory;
+  key: string;
+  content: string;
+  confidence: number;
+  importance: number;
+  tags: string;
+  is_shared: boolean;
+}
+
+export interface ExtractResponse {
+  raw_content: string;
+  candidates: ExtractedCandidate[];
+}
+
 export interface MCPPassportResponse {
   passport_id: string;
   display_name: string;
