@@ -16,6 +16,7 @@ frontend/.next/
 frontend/out/
 frontend/dist/
 frontend/build/
+*.tsbuildinfo
 
 # Python virtual environments
 .venv/

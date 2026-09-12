@@ -8,19 +8,181 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
+from app.providers.embedding_provider import (
+    EmbeddingCommunicationError,
+    EmbeddingConfigError,
+    EmbeddingError,
+)
 from app.schemas.memory import (
+    BackfillRequest,
+    BackfillResponse,
     ExtractRequest,
     ExtractResponse,
+    HybridSearchRequest,
     MemoryCreate,
     MemoryExport,
     MemoryImportItem,
     MemoryOut,
     MemoryUpdate,
+    SemanticSearchItem,
+    SemanticSearchRequest,
+    SemanticSearchResponse,
 )
 from app.services import memory_service
 from app.services.extraction_service import extract_memory_candidates
 
 router = APIRouter(prefix="/api/memories", tags=["memories"])
+
+
+@router.post("/search", response_model=SemanticSearchResponse)
+async def search_memories_endpoint(
+    body: SemanticSearchRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Search over user's memories using semantic, keyword, or hybrid mode."""
+    if body.search_mode == "semantic":
+        try:
+            results = await memory_service.semantic_search(
+                db, user_id=user.id, query=body.query, limit=body.limit
+            )
+        except EmbeddingConfigError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Embedding service is not configured",
+            )
+        except EmbeddingCommunicationError:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Failed to communicate with embedding service",
+            )
+        except EmbeddingError:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Embedding generation failed",
+            )
+
+        items = [
+            SemanticSearchItem(
+                id=mem.id,
+                content=mem.content,
+                memory_type=mem.memory_type,
+                importance=mem.importance,
+                confidence=mem.confidence,
+                similarity=score,
+                keyword_score=None,
+                hybrid_score=score,
+                created_at=mem.created_at,
+                updated_at=mem.updated_at,
+            )
+            for mem, score in results
+        ]
+        return SemanticSearchResponse(
+            items=items,
+            query=body.query,
+            limit=body.limit,
+            search_mode="semantic",
+        )
+
+    elif body.search_mode == "keyword":
+        results = await memory_service.keyword_search(
+            db, user_id=user.id, query=body.query, limit=body.limit
+        )
+        items = [
+            SemanticSearchItem(
+                id=mem.id,
+                content=mem.content,
+                memory_type=mem.memory_type,
+                importance=mem.importance,
+                confidence=mem.confidence,
+                similarity=None,
+                keyword_score=score,
+                hybrid_score=score,
+                created_at=mem.created_at,
+                updated_at=mem.updated_at,
+            )
+            for mem, score in results
+        ]
+        return SemanticSearchResponse(
+            items=items,
+            query=body.query,
+            limit=body.limit,
+            search_mode="keyword",
+        )
+
+    else:  # hybrid mode
+        results = await memory_service.hybrid_search(
+            db, user_id=user.id, query=body.query, limit=body.limit
+        )
+        items = [
+            SemanticSearchItem(
+                id=res.memory.id,
+                content=res.memory.content,
+                memory_type=res.memory.memory_type,
+                importance=res.memory.importance,
+                confidence=res.memory.confidence,
+                similarity=res.similarity,
+                keyword_score=res.keyword_score,
+                hybrid_score=res.hybrid_score,
+                created_at=res.memory.created_at,
+                updated_at=res.memory.updated_at,
+            )
+            for res in results
+        ]
+        return SemanticSearchResponse(
+            items=items,
+            query=body.query,
+            limit=body.limit,
+            search_mode="hybrid",
+        )
+
+
+@router.post("/hybrid-search", response_model=SemanticSearchResponse)
+async def hybrid_search_endpoint(
+    body: HybridSearchRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Dedicated endpoint for hybrid search combining semantic & keyword search."""
+    results = await memory_service.hybrid_search(
+        db, user_id=user.id, query=body.query, limit=body.limit
+    )
+    items = [
+        SemanticSearchItem(
+            id=res.memory.id,
+            content=res.memory.content,
+            memory_type=res.memory.memory_type,
+            importance=res.memory.importance,
+            confidence=res.memory.confidence,
+            similarity=res.similarity,
+            keyword_score=res.keyword_score,
+            hybrid_score=res.hybrid_score,
+            created_at=res.memory.created_at,
+            updated_at=res.memory.updated_at,
+        )
+        for res in results
+    ]
+    return SemanticSearchResponse(
+        items=items,
+        query=body.query,
+        limit=body.limit,
+        search_mode="hybrid",
+    )
+
+
+@router.post("/backfill", response_model=BackfillResponse)
+async def backfill_memories(
+    body: BackfillRequest = BackfillRequest(),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Backfill missing embeddings for the authenticated user's memories."""
+    from app.services.backfill_service import MemoryEmbeddingBackfillService
+
+    service = MemoryEmbeddingBackfillService(db)
+    return await service.backfill(user_id=user.id, batch_size=body.batch_size)
+
+
 
 
 @router.get("", response_model=list[MemoryOut])

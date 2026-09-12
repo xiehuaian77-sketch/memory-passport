@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
-from typing import Sequence
-
-from sqlalchemy import select, delete
-from sqlalchemy.ext.asyncio import AsyncSession
+from collections.abc import Sequence
 
 from app.models.memory import Memory
+from app.providers.embedding_provider import (
+    EmbeddingError,
+    EmbeddingProvider,
+    get_embedding_provider,
+)
 from app.schemas.memory import MemoryCreate, MemoryUpdate
 from app.services.embedding_service import (
     embedding_to_json,
@@ -16,6 +18,8 @@ from app.services.embedding_service import (
     json_to_embedding,
     rank_by_similarity,
 )
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
@@ -26,16 +30,9 @@ async def create_memory(
     data: MemoryCreate,
     *,
     auto_embed: bool = True,
+    embedding_provider: EmbeddingProvider | None = None,
 ) -> Memory:
-    """Create a new memory, optionally generating its embedding."""
-    embedding_json = None
-    if auto_embed:
-        try:
-            vec = await generate_embedding(f"{data.key}: {data.content}")
-            embedding_json = embedding_to_json(vec)
-        except Exception as e:
-            logger.warning("Embedding generation failed, saving without: %s", e)
-
+    """Create a new memory, optionally generating its embedding via EmbeddingProvider."""
     # Prefer explicit category field; fallback to memory_type or default
     mem_type = data.category if getattr(data, "category", None) is not None else (data.memory_type or "preference")
     mem = Memory(
@@ -43,7 +40,8 @@ async def create_memory(
         memory_type=mem_type,
         key=data.key,
         content=data.content,
-        embedding_json=embedding_json,
+        embedding=None,
+        embedding_json=None,
         source=data.source,
         confidence=data.confidence,
         importance=data.importance,
@@ -51,7 +49,27 @@ async def create_memory(
         tags=data.tags,
     )
     db.add(mem)
+    # First persist Memory to guarantee no data loss if embedding generation fails
     await db.flush()
+
+    if auto_embed:
+        provider = embedding_provider or get_embedding_provider()
+        try:
+            # Canonical embedding input: memory.content ONLY
+            vec = await provider.embed(data.content)
+            mem.embedding = vec
+            mem.embedding_json = embedding_to_json(vec)
+            await db.flush()
+        except EmbeddingError as exc:
+            # Catch embedding errors safely without leaking secrets or failing memory creation
+            logger.warning(
+                "Embedding generation failed for memory %s, preserving memory with embedding=None: %s",
+                mem.id,
+                exc.__class__.__name__,
+            )
+            mem.embedding = None
+            mem.embedding_json = None
+
     await db.refresh(mem)
     return mem
 
@@ -82,25 +100,40 @@ async def get_memory_by_id(
 
 
 async def update_memory(
-    db: AsyncSession, memory: Memory, data: MemoryUpdate
+    db: AsyncSession,
+    memory: Memory,
+    data: MemoryUpdate,
+    *,
+    embedding_provider: EmbeddingProvider | None = None,
 ) -> Memory:
     """Update memory fields and re-embed if content changed."""
-    # Track if key/content changed for re-embedding
-    changed = False
+    # Check if content actually changed
+    content_changed = (
+        data.content is not None and data.content != memory.content
+    )
     for field, value in data.model_dump(exclude_unset=True).items():
         if field == "category":
             # Update canonical column memory_type
             memory.memory_type = value
             continue
         setattr(memory, field, value)
-        if field in ("key", "content"):
-            changed = True
-    if changed:
+
+    if content_changed:
+        provider = embedding_provider or get_embedding_provider()
         try:
-            vec = await generate_embedding(f"{memory.key}: {memory.content}")
+            # Canonical embedding input: memory.content ONLY
+            vec = await provider.embed(memory.content)
+            memory.embedding = vec
             memory.embedding_json = embedding_to_json(vec)
-        except Exception as e:
-            logger.warning("Re-embedding failed: %s", e)
+        except EmbeddingError as exc:
+            logger.warning(
+                "Re-embedding failed for memory %s: %s",
+                memory.id,
+                exc.__class__.__name__,
+            )
+            memory.embedding = None
+            memory.embedding_json = None
+
     await db.flush()
     await db.refresh(memory)
     return memory
@@ -111,6 +144,159 @@ async def delete_memory(db: AsyncSession, memory_id: str, user_id: str) -> bool:
     stmt = delete(Memory).where(Memory.id == memory_id, Memory.user_id == user_id)
     result = await db.execute(stmt)
     return result.rowcount > 0  # type: ignore[union-attr]
+
+
+async def semantic_search(
+    db: AsyncSession,
+    user_id: str,
+    query: str,
+    limit: int = 10,
+    *,
+    embedding_provider: EmbeddingProvider | None = None,
+) -> list[tuple[Memory, float]]:
+    """Execute pure semantic search over user's memories using pgvector cosine similarity."""
+    provider = embedding_provider or get_embedding_provider()
+    query_vec = await provider.embed(query)
+    from app.repositories import memory_repo
+
+    return await memory_repo.semantic_search(
+        db, user_id=user_id, query_vector=query_vec, limit=limit
+    )
+
+
+DEFAULT_SEMANTIC_WEIGHT = 0.7
+DEFAULT_KEYWORD_WEIGHT = 0.3
+
+
+async def keyword_search(
+    db: AsyncSession,
+    user_id: str,
+    query: str,
+    limit: int = 10,
+) -> list[tuple[Memory, float]]:
+    """Execute keyword search over user's memories using PostgreSQL FTS / content matching."""
+    from app.repositories import memory_repo
+
+    return await memory_repo.keyword_search(
+        db, user_id=user_id, query=query, limit=limit
+    )
+
+
+class HybridSearchResult:
+    """Wrapper holding a Memory and its similarity, keyword, and hybrid fusion scores."""
+
+    def __init__(
+        self,
+        memory: Memory,
+        similarity: float | None,
+        keyword_score: float | None,
+        hybrid_score: float,
+    ):
+        self.memory = memory
+        self.similarity = similarity
+        self.keyword_score = keyword_score
+        self.hybrid_score = hybrid_score
+
+
+async def hybrid_search(
+    db: AsyncSession,
+    user_id: str,
+    query: str,
+    limit: int = 10,
+    *,
+    semantic_weight: float = DEFAULT_SEMANTIC_WEIGHT,
+    keyword_weight: float = DEFAULT_KEYWORD_WEIGHT,
+    embedding_provider: EmbeddingProvider | None = None,
+) -> list[HybridSearchResult]:
+    """Execute hybrid search combining semantic search and keyword FTS search.
+
+    Score normalization and fusion:
+      semantic_score = max(0.0, min(1.0, similarity)) if similarity is not None else 0.0
+      keyword_score = max(0.0, min(1.0, kw_score)) if kw_score is not None else 0.0
+      hybrid_score = round(semantic_weight * semantic_score + keyword_weight * keyword_score, 4)
+
+    Deterministic ordering:
+      ORDER BY hybrid_score DESC, created_at DESC, id DESC
+    """
+    from app.repositories import memory_repo
+
+    # Clamp weights
+    total_weight = semantic_weight + keyword_weight
+    if total_weight <= 0:
+        semantic_weight = DEFAULT_SEMANTIC_WEIGHT
+        keyword_weight = DEFAULT_KEYWORD_WEIGHT
+        total_weight = 1.0
+    w_sem = semantic_weight / total_weight
+    w_kw = keyword_weight / total_weight
+
+    # 1. Fetch semantic candidates
+    fetch_limit = max(limit * 2, 20)
+    sem_map: dict[str, tuple[Memory, float]] = {}
+    try:
+        provider = embedding_provider or get_embedding_provider()
+        query_vec = await provider.embed(query)
+        sem_results = await memory_repo.semantic_search(
+            db, user_id=user_id, query_vector=query_vec, limit=fetch_limit
+        )
+        for mem, sim in sem_results:
+            sem_map[mem.id] = (mem, sim)
+    except EmbeddingError as exc:
+        logger.warning(
+            "Semantic search branch unavailable (%s), continuing with keyword branch only",
+            exc.__class__.__name__,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Semantic search branch encountered error (%s), continuing with keyword branch only",
+            exc,
+        )
+
+    # 2. Fetch keyword candidates
+    kw_results = await memory_repo.keyword_search(
+        db, user_id=user_id, query=query, limit=fetch_limit
+    )
+    kw_map: dict[str, tuple[Memory, float]] = {mem.id: (mem, score) for mem, score in kw_results}
+
+    # 3. Fuse candidates
+    all_memory_ids = list(dict.fromkeys(list(sem_map.keys()) + list(kw_map.keys())))
+    if not all_memory_ids:
+        return []
+
+    fused_results: list[HybridSearchResult] = []
+    for mid in all_memory_ids:
+        mem = sem_map[mid][0] if mid in sem_map else kw_map[mid][0]
+
+        # Normalized semantic score
+        sim = sem_map[mid][1] if mid in sem_map else None
+        sem_score = max(0.0, min(1.0, sim)) if sim is not None else 0.0
+
+        # Normalized keyword score
+        kw_sc = kw_map[mid][1] if mid in kw_map else None
+        kw_score = max(0.0, min(1.0, kw_sc)) if kw_sc is not None else 0.0
+
+        # Score fusion
+        hybrid_sc = round(w_sem * sem_score + w_kw * kw_score, 4)
+
+        if hybrid_sc > 0.0:
+            fused_results.append(
+                HybridSearchResult(
+                    memory=mem,
+                    similarity=sim,
+                    keyword_score=kw_sc,
+                    hybrid_score=hybrid_sc,
+                )
+            )
+
+    # 4. Deterministic stable tie-breaking: hybrid_score DESC, created_at DESC, id DESC
+    fused_results.sort(
+        key=lambda x: (
+            x.hybrid_score,
+            x.memory.created_at.timestamp() if x.memory.created_at else 0.0,
+            x.memory.id,
+        ),
+        reverse=True,
+    )
+    return fused_results[:limit]
 
 
 async def search_memories(
@@ -148,7 +334,7 @@ async def search_memories(
         if candidates:
             ranked = rank_by_similarity(query_np, candidates, top_k=top_k)
             return [(mem_map[mid], score) for mid, score in ranked if mid in mem_map]
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.info("Vector search unavailable (%s), falling back to keyword search", e)
 
     # Fallback: keyword/substring match over memories

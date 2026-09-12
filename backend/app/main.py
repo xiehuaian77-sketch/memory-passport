@@ -58,3 +58,24 @@ async def health():
         "llm_model": settings.llm_model,
         "embedding_model": settings.embedding_model,
     }
+
+
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import get_db
+from app.deps import get_current_user
+from app.models.user import User
+from app.schemas.memory import SemanticSearchRequest, SemanticSearchResponse
+
+
+@app.post("/memories/search", response_model=SemanticSearchResponse, tags=["memories"])
+async def root_memories_search(
+    body: SemanticSearchRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Direct alias for /api/memories/search."""
+    from app.routers.memories import semantic_search as memories_search
+
+    return await memories_search(body, user=user, db=db)

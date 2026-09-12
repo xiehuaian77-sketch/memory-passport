@@ -2,8 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
-
+from pydantic import BaseModel, Field, field_validator
 
 # ---------- Memory CRUD ----------
 
@@ -48,6 +47,7 @@ class MemoryOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     expires_at: datetime | None = None
+    embedding: list[float] | None = None
 
     model_config = {"from_attributes": True}
 
@@ -142,3 +142,86 @@ class MemoryImportItem(BaseModel):
     content: str = Field(min_length=1)
     confidence: float = Field(default=0.8, ge=0.0, le=1.0)
     tags: str = ""
+
+
+# ---------- Phase 2.3D & 2.4: Semantic, Keyword & Hybrid Search ----------
+
+class SemanticSearchRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=2000)
+    limit: int = Field(default=10, ge=1, le=50)
+    search_mode: str = Field(
+        default="semantic",
+        pattern=r"^(semantic|keyword|hybrid)$",
+        description="Search mode: semantic, keyword, or hybrid",
+    )
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator("query")
+    @classmethod
+    def validate_query_not_whitespace(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Query string must not be empty or whitespace only")
+        return v.strip()
+
+
+class HybridSearchRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=2000)
+    limit: int = Field(default=10, ge=1, le=50)
+    search_mode: str = Field(
+        default="hybrid",
+        pattern=r"^(semantic|keyword|hybrid)$",
+        description="Search mode: semantic, keyword, or hybrid",
+    )
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator("query")
+    @classmethod
+    def validate_query_not_whitespace(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Query string must not be empty or whitespace only")
+        return v.strip()
+
+
+class SemanticSearchItem(BaseModel):
+    id: str
+    content: str
+    memory_type: str
+    importance: float = 0.5
+    confidence: float = 1.0
+    similarity: float | None = None
+    keyword_score: float | None = None
+    hybrid_score: float | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class SemanticSearchResponse(BaseModel):
+    items: list[SemanticSearchItem]
+    query: str
+    limit: int
+    search_mode: str = "semantic"
+
+
+# Aliases for hybrid search clarity
+HybridSearchItem = SemanticSearchItem
+HybridSearchResponse = SemanticSearchResponse
+
+
+# ---------- Phase 2.3F: Backfill ----------
+
+class BackfillRequest(BaseModel):
+    batch_size: int = Field(default=20, ge=1, le=100)
+
+    model_config = {"extra": "ignore"}
+
+
+class BackfillResponse(BaseModel):
+    total_candidates: int
+    processed: int
+    succeeded: int
+    failed: int
+    remaining: int

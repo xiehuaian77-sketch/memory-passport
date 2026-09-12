@@ -21,10 +21,15 @@ class Settings(BaseSettings):
     llm_model: str = "qwen-plus"
 
     # --- Embedding Provider (OpenAI-compatible) ---
-    embedding_base_url: str = "https://api.openai.com/v1"
+    embedding_provider: str = "dashscope"
+    embedding_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     embedding_api_key: str = ""
-    embedding_model: str = "text-embedding-3-small"
-    embedding_dimensions: int = 1536
+    embedding_model: str = "qwen3.7-text-embedding-flash"
+    embedding_dimensions: int = 1024
+
+    def get_embedding_api_key(self) -> str:
+        """Return embedding API key, falling back to LLM / DashScope key."""
+        return self.embedding_api_key or self.llm_api_key
 
     # --- CORS ---
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"

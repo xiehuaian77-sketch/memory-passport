@@ -6,10 +6,10 @@ Each memory stores content + embedding (as JSON text) for semantic search.
 import uuid
 from datetime import datetime, timezone
 
+from app.models.base import Base
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.models.base import Base
 
 
 def _utcnow() -> datetime:
@@ -44,7 +44,10 @@ class Memory(Base):
     key: Mapped[str] = mapped_column(String(200), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
 
-    # --- Embedding (stored as JSON string of float list for SQLite) ---
+    # --- Embedding vector (1024-dim pgvector for qwen3.7-text-embedding-flash) ---
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1024), nullable=True)
+
+    # --- Embedding legacy/fallback (stored as JSON string of float list for SQLite) ---
     embedding_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # --- Metadata ---
