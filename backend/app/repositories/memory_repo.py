@@ -34,6 +34,10 @@ async def create(db: AsyncSession, user_id: str, data: MemoryCreate) -> Memory:
         confidence=data.confidence,
         importance=data.importance,
         tags=data.tags,
+        status=getattr(data, "status", None) or "active",
+        version=1,
+        source_conversation_id=getattr(data, "source_conversation_id", None),
+        source_message_id=getattr(data, "source_message_id", None),
     )
     db.add(mem)
     await db.flush()
@@ -54,16 +58,14 @@ async def get_by_id(db: AsyncSession, memory_id: str, user_id: str) -> Memory | 
 async def list_by_user(
     db: AsyncSession,
     user_id: str,
+    status: str | None = None,
     offset: int = 0,
     limit: int = 100,
 ) -> Sequence[Memory]:
-    stmt = (
-        select(Memory)
-        .where(Memory.user_id == user_id)
-        .order_by(Memory.updated_at.desc())
-        .offset(offset)
-        .limit(limit)
-    )
+    stmt = select(Memory).where(Memory.user_id == user_id)
+    if status is not None:
+        stmt = stmt.where(Memory.status == status)
+    stmt = stmt.order_by(Memory.updated_at.desc()).offset(offset).limit(limit)
     result = await db.execute(stmt)
     return result.scalars().all()
 
@@ -130,27 +132,26 @@ async def semantic_search(
     user_id: str,
     query_vector: list[float],
     limit: int = 10,
+    status: str | None = "active",
 ) -> list[tuple[Memory, float]]:
     """Search user's memories using cosine distance on pgvector embedding.
 
     Returns list of (Memory, similarity) tuples ordered by similarity DESC.
     similarity = 1.0 - cosine_distance.
-    Enforces user_id isolation in the database query.
+    Enforces user_id isolation and status filtering in the database query.
     """
     bind = db.get_bind()
     dialect = bind.dialect.name if bind else "postgresql"
 
     if dialect == "postgresql":
         dist_expr = Memory.embedding.cosine_distance(query_vector)
-        stmt = (
-            select(Memory, dist_expr.label("distance"))
-            .where(
-                Memory.user_id == user_id,
-                Memory.embedding.isnot(None),
-            )
-            .order_by(dist_expr.asc())
-            .limit(limit)
+        stmt = select(Memory, dist_expr.label("distance")).where(
+            Memory.user_id == user_id,
+            Memory.embedding.isnot(None),
         )
+        if status is not None:
+            stmt = stmt.where(Memory.status == status)
+        stmt = stmt.order_by(dist_expr.asc()).limit(limit)
         result = await db.execute(stmt)
         rows = result.all()
         return [
@@ -159,13 +160,12 @@ async def semantic_search(
         ]
     else:
         # SQLite compatibility for testing
-        stmt = (
-            select(Memory)
-            .where(
-                Memory.user_id == user_id,
-                Memory.embedding.isnot(None),
-            )
+        stmt = select(Memory).where(
+            Memory.user_id == user_id,
+            Memory.embedding.isnot(None),
         )
+        if status is not None:
+            stmt = stmt.where(Memory.status == status)
         result = await db.execute(stmt)
         memories = result.scalars().all()
         scored: list[tuple[Memory, float]] = []
@@ -195,12 +195,13 @@ async def keyword_search(
     user_id: str,
     query: str,
     limit: int = 10,
+    status: str | None = "active",
 ) -> list[tuple[Memory, float]]:
     """Search user's memories using PostgreSQL FTS and keyword matching on content.
 
     Returns list of (Memory, keyword_score) tuples ordered by keyword_score DESC.
     keyword_score is normalized to [0.0, 1.0].
-    Enforces user_id isolation in the database query.
+    Enforces user_id isolation and status filtering in the database query.
     """
     bind = db.get_bind()
     dialect = bind.dialect.name if bind else "postgresql"
@@ -232,14 +233,13 @@ async def keyword_search(
             params[param_name] = f"%{t}%"
             conditions.append(text(f"memories.content ILIKE :{param_name}"))
 
-        stmt = (
-            select(Memory)
-            .where(
-                Memory.user_id == user_id,
-                or_(*conditions),
-            )
-            .params(**params)
+        stmt = select(Memory).where(
+            Memory.user_id == user_id,
+            or_(*conditions),
         )
+        if status is not None:
+            stmt = stmt.where(Memory.status == status)
+        stmt = stmt.params(**params)
         result = await db.execute(stmt)
         memories = result.scalars().all()
     else:
@@ -248,13 +248,12 @@ async def keyword_search(
         for t in tokens[:5]:
             conditions.append(Memory.content.ilike(f"%{t}%"))
 
-        stmt = (
-            select(Memory)
-            .where(
-                Memory.user_id == user_id,
-                or_(*conditions),
-            )
+        stmt = select(Memory).where(
+            Memory.user_id == user_id,
+            or_(*conditions),
         )
+        if status is not None:
+            stmt = stmt.where(Memory.status == status)
         result = await db.execute(stmt)
         memories = result.scalars().all()
 

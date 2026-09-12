@@ -192,6 +192,7 @@ async def confirm_memory_from_conversation(
         importance=cand.importance,
         is_shared=cand.is_shared,
         tags=tags_str,
+        source_conversation_id=conversation_id,
     )
 
     created_mem = await memory_service.create_memory(

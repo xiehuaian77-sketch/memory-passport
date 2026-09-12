@@ -16,6 +16,8 @@ from app.providers.embedding_provider import (
 from app.schemas.memory import (
     BackfillRequest,
     BackfillResponse,
+    ConflictDetectionRequest,
+    ConflictDetectionResponse,
     ExtractRequest,
     ExtractResponse,
     HybridSearchRequest,
@@ -216,6 +218,7 @@ async def backfill_memories(
 @router.get("", response_model=list[MemoryOut])
 async def list_memories(
     category: str | None = Query(default=None),
+    status: str | None = Query(default=None),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
     user: User = Depends(get_current_user),
@@ -223,7 +226,7 @@ async def list_memories(
 ):
     """List all memories for the authenticated user."""
     memories = await memory_service.get_memories(
-        db, user.id, category=category, offset=offset, limit=limit
+        db, user.id, category=category, status=status, offset=offset, limit=limit
     )
     return memories
 
@@ -301,6 +304,52 @@ async def delete_memory(
     deleted = await memory_service.delete_memory(db, memory_id, user.id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Memory not found")
+
+
+@router.post("/{memory_id}/archive", response_model=MemoryOut)
+async def archive_memory(
+    memory_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Archive a memory (sets status='archived'). Excluded from AI retrieval context."""
+    mem = await memory_service.archive_memory(db, memory_id=memory_id, user_id=user.id)
+    if not mem:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
+    return mem
+
+
+@router.post("/{memory_id}/restore", response_model=MemoryOut)
+async def restore_memory(
+    memory_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Restore an archived memory back to 'active' status."""
+    mem = await memory_service.restore_memory(db, memory_id=memory_id, user_id=user.id)
+    if not mem:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
+    return mem
+
+
+@router.post("/detect-conflicts", response_model=ConflictDetectionResponse)
+async def detect_conflicts_endpoint(
+    body: ConflictDetectionRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Analyze a proposed memory against active memories to detect key/semantic conflicts. Strictly read-only."""
+    conflicts = await memory_service.detect_conflicts(
+        db,
+        user_id=user.id,
+        key=body.key,
+        content=body.content,
+        memory_type=body.memory_type,
+    )
+    return ConflictDetectionResponse(
+        has_conflict=len(conflicts) > 0,
+        conflicts=conflicts,
+    )
 
 
 @router.get("/export/all", response_model=MemoryExport)

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 from app.models.base import Base
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 
@@ -69,6 +69,20 @@ class Memory(Base):
     )
     expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+    # --- Phase 3.1: Memory Lifecycle & Provenance ---
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="active", index=True
+    )  # active | archived | conflicted
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1
+    )
+    source_conversation_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    source_message_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("conversation_messages.id", ondelete="SET NULL"), nullable=True
     )
 
     # Relationship

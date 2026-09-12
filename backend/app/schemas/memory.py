@@ -22,6 +22,11 @@ class MemoryCreate(BaseModel):
     importance: float = Field(default=0.5, ge=0.0, le=1.0)
     is_shared: bool = True
     tags: str = ""  # comma-separated
+    status: str = Field(
+        default="active", pattern=r"^(active|archived|conflicted)$"
+    )
+    source_conversation_id: str | None = None
+    source_message_id: str | None = None
 
 
 class MemoryUpdate(BaseModel):
@@ -33,6 +38,9 @@ class MemoryUpdate(BaseModel):
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     is_shared: bool | None = None
     tags: str | None = None
+    status: str | None = Field(
+        default=None, pattern=r"^(active|archived|conflicted)$"
+    )
 
 
 class MemoryOut(BaseModel):
@@ -49,8 +57,41 @@ class MemoryOut(BaseModel):
     updated_at: datetime
     expires_at: datetime | None = None
     embedding: list[float] | None = None
+    status: str = "active"
+    version: int = 1
+    source_conversation_id: str | None = None
+    source_message_id: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+# ---------- Conflict Detection ----------
+
+class ConflictItem(BaseModel):
+    existing_memory_id: str
+    existing_key: str
+    existing_content: str
+    conflict_type: str = Field(
+        description="Type of conflict: 'key_conflict' | 'semantic_conflict'"
+    )
+    similarity: float | None = None
+    recommendation: str = Field(
+        default="archive_old",
+        description="Suggested action: 'archive_old' | 'replace' | 'keep_both'",
+    )
+
+
+class ConflictDetectionRequest(BaseModel):
+    key: str = Field(min_length=1, max_length=200)
+    content: str = Field(min_length=1)
+    memory_type: str = Field(
+        default="preference", pattern=r"^(preference|identity|task|context)$"
+    )
+
+
+class ConflictDetectionResponse(BaseModel):
+    has_conflict: bool
+    conflicts: list[ConflictItem] = Field(default_factory=list)
 
 
 # ---------- Search ----------
@@ -371,6 +412,9 @@ class MemoryRetrievalRequest(BaseModel):
     )
     max_context_chars: int = Field(
         default=4000, ge=1, description="Max total characters in context"
+    )
+    status: str | None = Field(
+        default="active", description="Filter by status: active, archived, or None for all"
     )
 
     model_config = {"extra": "ignore"}

@@ -36,6 +36,9 @@ class RetrievalPolicyConfig(BaseModel):
     recency_half_life_days: float = Field(
         default=30.0, gt=0.0, description="Recency decay half life in days"
     )
+    status: str | None = Field(
+        default="active", description="Filter by status: active, archived, or None for all"
+    )
 
     model_config = {"extra": "forbid"}
 
@@ -111,6 +114,12 @@ class MemoryRetrievalPolicy:
             hybrid_sc = float(getattr(c, "hybrid_score", 0.0))
             sim = getattr(c, "similarity", None)
             kw_sc = getattr(c, "keyword_score", None)
+
+            # 0. Filter: status
+            if self.config.status is not None:
+                mem_status = getattr(mem, "status", None) or "active"
+                if mem_status != self.config.status:
+                    continue
 
             # 1. Filter: min_relevance (hybrid_score)
             if hybrid_sc < self.config.min_relevance:

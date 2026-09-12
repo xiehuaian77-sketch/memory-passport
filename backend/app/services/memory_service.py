@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from app.schemas.memory import MemoryRetrievalRequest
+    from app.schemas.memory import ConflictItem, MemoryRetrievalRequest
     from app.services.context_assembler import AssembledContext
 
 from app.models.memory import Memory
@@ -52,6 +52,10 @@ async def create_memory(
         importance=data.importance,
         is_shared=data.is_shared,
         tags=data.tags,
+        status=getattr(data, "status", None) or "active",
+        version=1,
+        source_conversation_id=getattr(data, "source_conversation_id", None),
+        source_message_id=getattr(data, "source_message_id", None),
     )
     db.add(mem)
     # First persist Memory to guarantee no data loss if embedding generation fails
@@ -83,13 +87,16 @@ async def get_memories(
     db: AsyncSession,
     user_id: str,
     category: str | None = None,
+    status: str | None = None,
     offset: int = 0,
     limit: int = 100,
 ) -> Sequence[Memory]:
-    """Get memories for a user, optionally filtered by category."""
+    """Get memories for a user, optionally filtered by category and status."""
     stmt = select(Memory).where(Memory.user_id == user_id)
     if category:
         stmt = stmt.where(Memory.memory_type == category)
+    if status is not None:
+        stmt = stmt.where(Memory.status == status)
     stmt = stmt.order_by(Memory.updated_at.desc()).offset(offset).limit(limit)
     result = await db.execute(stmt)
     return result.scalars().all()
@@ -111,7 +118,7 @@ async def update_memory(
     *,
     embedding_provider: EmbeddingProvider | None = None,
 ) -> Memory:
-    """Update memory fields and re-embed if content changed."""
+    """Update memory fields and re-embed if content changed. Increments memory version."""
     # Check if content actually changed
     content_changed = (
         data.content is not None and data.content != memory.content
@@ -122,6 +129,9 @@ async def update_memory(
             memory.memory_type = value
             continue
         setattr(memory, field, value)
+
+    # Monotonically increment version on update
+    memory.version = (memory.version or 1) + 1
 
     if content_changed:
         provider = embedding_provider or get_embedding_provider()
@@ -151,11 +161,107 @@ async def delete_memory(db: AsyncSession, memory_id: str, user_id: str) -> bool:
     return result.rowcount > 0  # type: ignore[union-attr]
 
 
+async def archive_memory(
+    db: AsyncSession, memory_id: str, user_id: str
+) -> Memory | None:
+    """Archive a memory by setting status='archived'. Enforces user isolation."""
+    mem = await get_memory_by_id(db, memory_id=memory_id, user_id=user_id)
+    if not mem:
+        return None
+    mem.status = "archived"
+    await db.flush()
+    await db.refresh(mem)
+    return mem
+
+
+async def restore_memory(
+    db: AsyncSession, memory_id: str, user_id: str
+) -> Memory | None:
+    """Restore an archived memory by setting status='active'. Enforces user isolation."""
+    mem = await get_memory_by_id(db, memory_id=memory_id, user_id=user_id)
+    if not mem:
+        return None
+    mem.status = "active"
+    await db.flush()
+    await db.refresh(mem)
+    return mem
+
+
+async def detect_conflicts(
+    db: AsyncSession,
+    user_id: str,
+    key: str,
+    content: str,
+    memory_type: str = "preference",
+    *,
+    embedding_provider: EmbeddingProvider | None = None,
+) -> list[ConflictItem]:
+    """Detect conflicts between candidate memory and active memories. Strictly read-only."""
+    from app.schemas.memory import ConflictItem
+
+    conflicts: list[ConflictItem] = []
+    key_clean = key.strip()
+    content_clean = content.strip()
+
+    # 1. Exact key conflict on active memories
+    stmt = select(Memory).where(
+        Memory.user_id == user_id,
+        Memory.status == "active",
+        Memory.key == key_clean,
+    )
+    res = await db.execute(stmt)
+    existing_key_mems = res.scalars().all()
+
+    for em in existing_key_mems:
+        if em.content.strip().lower() != content_clean.lower():
+            conflicts.append(
+                ConflictItem(
+                    existing_memory_id=em.id,
+                    existing_key=em.key,
+                    existing_content=em.content,
+                    conflict_type="key_conflict",
+                    similarity=None,
+                    recommendation="archive_old",
+                )
+            )
+
+    # 2. Semantic conflict check via semantic_search on active memories
+    already_flagged_ids = {c.existing_memory_id for c in conflicts}
+    try:
+        sem_results = await semantic_search(
+            db,
+            user_id=user_id,
+            query=content_clean,
+            limit=5,
+            status="active",
+            embedding_provider=embedding_provider,
+        )
+        for em, sim in sem_results:
+            if em.id in already_flagged_ids:
+                continue
+            if sim >= 0.85 and em.content.strip().lower() != content_clean.lower():
+                conflicts.append(
+                    ConflictItem(
+                        existing_memory_id=em.id,
+                        existing_key=em.key,
+                        existing_content=em.content,
+                        conflict_type="semantic_conflict",
+                        similarity=sim,
+                        recommendation="archive_old",
+                    )
+                )
+    except Exception as exc:
+        logger.warning("Semantic conflict detection fallback (error ignored): %s", exc)
+
+    return conflicts
+
+
 async def semantic_search(
     db: AsyncSession,
     user_id: str,
     query: str,
     limit: int = 10,
+    status: str | None = "active",
     *,
     embedding_provider: EmbeddingProvider | None = None,
 ) -> list[tuple[Memory, float]]:
@@ -165,7 +271,7 @@ async def semantic_search(
     from app.repositories import memory_repo
 
     return await memory_repo.semantic_search(
-        db, user_id=user_id, query_vector=query_vec, limit=limit
+        db, user_id=user_id, query_vector=query_vec, limit=limit, status=status
     )
 
 
@@ -178,12 +284,13 @@ async def keyword_search(
     user_id: str,
     query: str,
     limit: int = 10,
+    status: str | None = "active",
 ) -> list[tuple[Memory, float]]:
     """Execute keyword search over user's memories using PostgreSQL FTS / content matching."""
     from app.repositories import memory_repo
 
     return await memory_repo.keyword_search(
-        db, user_id=user_id, query=query, limit=limit
+        db, user_id=user_id, query=query, limit=limit, status=status
     )
 
 
@@ -208,6 +315,7 @@ async def hybrid_search(
     user_id: str,
     query: str,
     limit: int = 10,
+    status: str | None = "active",
     *,
     semantic_weight: float = DEFAULT_SEMANTIC_WEIGHT,
     keyword_weight: float = DEFAULT_KEYWORD_WEIGHT,
@@ -241,7 +349,7 @@ async def hybrid_search(
         provider = embedding_provider or get_embedding_provider()
         query_vec = await provider.embed(query)
         sem_results = await memory_repo.semantic_search(
-            db, user_id=user_id, query_vector=query_vec, limit=fetch_limit
+            db, user_id=user_id, query_vector=query_vec, limit=fetch_limit, status=status
         )
         for mem, sim in sem_results:
             sem_map[mem.id] = (mem, sim)
@@ -258,7 +366,7 @@ async def hybrid_search(
 
     # 2. Fetch keyword candidates
     kw_results = await memory_repo.keyword_search(
-        db, user_id=user_id, query=query, limit=fetch_limit
+        db, user_id=user_id, query=query, limit=fetch_limit, status=status
     )
     kw_map: dict[str, tuple[Memory, float]] = {mem.id: (mem, score) for mem, score in kw_results}
 
@@ -416,11 +524,13 @@ async def retrieve_context(
     from app.services.retrieval_policy import MemoryRetrievalPolicy, RetrievalPolicyConfig
 
     fetch_limit = max(getattr(request, "top_k", 10) * 3, 30)
+    status_filter = getattr(request, "status", "active")
     search_results = await hybrid_search(
         db,
         user_id=user_id,
         query=request.query,
         limit=fetch_limit,
+        status=status_filter,
         embedding_provider=embedding_provider,
     )
 
@@ -431,6 +541,7 @@ async def retrieve_context(
         min_confidence=getattr(request, "min_confidence", 0.0),
         memory_types=getattr(request, "memory_types", None),
         recency_half_life_days=getattr(request, "recency_half_life_days", 30.0),
+        status=status_filter,
     )
     policy = MemoryRetrievalPolicy(policy_config)
     scored_memories = policy.apply(search_results)
