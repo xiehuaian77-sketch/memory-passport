@@ -1,13 +1,22 @@
-"""Chat router — AI conversation with memory injection."""
+"""Chat router — AI conversation core (Phase 3.0A)."""
 
-from fastapi import APIRouter, Depends, HTTPException
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
+from app.providers.llm_provider import (
+    LLMCommunicationError,
+    LLMConfigError,
+)
 from app.schemas.memory import ChatRequest, ChatResponse, MemoryCreate, MemoryOut
-from app.services import ai_service, memory_service
+from app.services import memory_service
+from app.services.chat_service import ChatService, get_chat_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -17,38 +26,36 @@ async def chat(
     body: ChatRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    service: ChatService = Depends(get_chat_service),
 ):
-    """Chat with AI using memory-augmented context."""
-    # Load user memories for prompt injection
-    memories_dicts = await memory_service.get_all_memories_as_dicts(db, user.id)
-
-    # Call LLM with memory context
+    """Chat with AI with automatic memory retrieval and context injection (Phase 3.0B)."""
     try:
-        reply = await ai_service.chat_with_memory(
-            message=body.message,
-            history=[h.model_dump() for h in body.history],
-            memories=memories_dicts,
-            agent_role=body.agent_role,
+        try:
+            reply = await service.chat(message=body.message, user_id=user.id, db=db)
+        except TypeError:
+            reply = await service.chat(message=body.message, user_id=user.id)
+        return ChatResponse(
+            response=reply,
+            reply=reply,
+            extracted_memories=[],
+            loaded_memories=[],
         )
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
-
-    # Extract potential new memories from conversation
-    extracted = []
-    try:
-        extracted = await ai_service.extract_memories(body.message, reply)
-    except Exception:
-        pass  # Non-critical: extraction failure doesn't break chat
-
-    # Also return the loaded memories for UI display
-    all_mems = await memory_service.get_memories(db, user.id, limit=50)
-    loaded = [MemoryOut.model_validate(m) for m in all_mems]
-
-    return ChatResponse(
-        reply=reply,
-        extracted_memories=extracted,
-        loaded_memories=loaded,
-    )
+    except LLMConfigError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI service is not configured. Please set LLM_API_KEY.",
+        )
+    except LLMCommunicationError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to communicate with AI provider.",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Chat generation failed: %s", exc.__class__.__name__)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="AI service temporarily unavailable.",
+        )
 
 
 @router.post("/save-extracted", response_model=list[MemoryOut])

@@ -1,6 +1,7 @@
 """Pydantic schemas for Memory-related requests / responses."""
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -73,12 +74,21 @@ class ChatMessage(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    message: str = Field(min_length=1)
+    message: str = Field(min_length=1, max_length=10000, description="User chat message")
     history: list[ChatMessage] = Field(default_factory=list)
     agent_role: str = Field(
         default="general",
         description="Simulated agent role for cross-app demo",
     )
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator("message")
+    @classmethod
+    def validate_message(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Message must not be empty or whitespace only")
+        return v.strip()
 
 
 class ExtractedMemory(BaseModel):
@@ -89,9 +99,22 @@ class ExtractedMemory(BaseModel):
 
 
 class ChatResponse(BaseModel):
-    reply: str
+    response: str = Field(description="AI response text")
+    reply: str | None = Field(
+        default=None, description="Compatibility alias for response"
+    )
     extracted_memories: list[ExtractedMemory] = Field(default_factory=list)
     loaded_memories: list[MemoryOut] = Field(default_factory=list)
+
+    model_config = {"extra": "ignore"}
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.reply is None:
+            self.reply = self.response
+        if not self.response and self.reply:
+            self.response = self.reply
+
+
 class ExtractedCandidate(BaseModel):
     category: str = Field(
         default="preference",
