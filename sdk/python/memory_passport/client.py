@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+# Standard library imports
 import os
-from typing import Any, Mapping
+from collections.abc import Mapping
+from types import TracebackType
+from typing import Self
 
+# Third‑party imports
 import httpx
 
+# Local package imports
 from memory_passport.resources.audit import AuditResource
 from memory_passport.resources.chat import ChatResource
 from memory_passport.resources.conflicts import ConflictsResource
@@ -87,10 +92,10 @@ class MemoryPassportClient:
     def close(self) -> None:
         self._transport.close()
 
-    def __enter__(self) -> "MemoryPassportClient":
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    def __exit__(self, exc_type: object, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
         self.close()
 
     def __repr__(self) -> str:

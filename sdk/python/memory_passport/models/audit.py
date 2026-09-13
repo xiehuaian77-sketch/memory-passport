@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
+
+from pydantic import Field
+
 from memory_passport.models.common import BaseSDKModel
 
 
@@ -16,7 +19,7 @@ class MemoryAuditLog(BaseSDKModel):
     action: str
     from_version: int | None = None
     to_version: int | None = None
-    metadata: dict[str, Any] = {}
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
 
 

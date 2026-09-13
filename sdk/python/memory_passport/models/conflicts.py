@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pydantic import Field
+
 from memory_passport.models.common import BaseSDKModel
 
 
@@ -21,4 +23,6 @@ class ConflictItem(BaseSDKModel):
 
 class ConflictDetectionResponse(BaseSDKModel):
     has_conflict: bool
-    conflicts: list[ConflictItem] = []
+
+
+    conflicts: list[ConflictItem] = Field(default_factory=list)

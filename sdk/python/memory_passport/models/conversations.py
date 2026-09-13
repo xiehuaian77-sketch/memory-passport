@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime
+
+from pydantic import Field
+
 from memory_passport.models.common import BaseSDKModel
 
 
@@ -19,7 +22,7 @@ class Conversation(BaseSDKModel):
     user_id: str
     created_at: datetime
     updated_at: datetime
-    messages: list[ConversationMessage] = []
+    messages: list[ConversationMessage] = Field(default_factory=list)
 
 
 class ConversationMemoryCandidate(BaseSDKModel):
@@ -29,7 +32,7 @@ class ConversationMemoryCandidate(BaseSDKModel):
     content: str
     importance: float = 0.5
     confidence: float = 1.0
-    tags: list[str] = []
+    tags: list[str] = Field(default_factory=list)
     reason: str = ""
     source: str = "conversation"
     raw_content: str = ""
@@ -38,7 +41,7 @@ class ConversationMemoryCandidate(BaseSDKModel):
 
 class ConversationExtractResponse(BaseSDKModel):
     conversation_id: str
-    candidates: list[ConversationMemoryCandidate] = []
+    candidates: list[ConversationMemoryCandidate] = Field(default_factory=list)
 
 
 class CandidateUserEdits(BaseSDKModel):
@@ -55,6 +58,6 @@ class ConversationConfirmCandidate(BaseSDKModel):
     content: str
     importance: float = 0.5
     confidence: float = 1.0
-    tags: list[str] | str = []
+    tags: list[str] | str = Field(default_factory=list)
     raw_content: str = ""
     is_shared: bool = True

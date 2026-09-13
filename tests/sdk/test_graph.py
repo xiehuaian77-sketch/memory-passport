@@ -1,6 +1,7 @@
 """Tests for graph relationship resources."""
 
 from datetime import datetime, timezone
+
 from memory_passport.models import DirectionType, RelationshipType, TemporalMode
 
 

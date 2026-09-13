@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+
 from memory_passport.models.common import DirectionType, RelationshipType, TemporalMode
 from memory_passport.models.graph import MemoryRelationship, RelatedMemory
 from memory_passport.transport import MemoryPassportTransport

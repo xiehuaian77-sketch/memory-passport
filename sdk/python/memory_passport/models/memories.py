@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+
 from memory_passport.models.common import BaseSDKModel, MemoryStatus, MemoryType
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+
 from memory_passport.models.chat import ChatMessageInput, ChatResponse
 from memory_passport.transport import MemoryPassportTransport
 

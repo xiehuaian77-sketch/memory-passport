@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime
+
+from pydantic import Field
+
 from memory_passport.models.common import BaseSDKModel
 
 
@@ -41,7 +44,9 @@ class AssembledMemoryItem(BaseSDKModel):
 
 
 class AssembledContext(BaseSDKModel):
-    items: list[AssembledMemoryItem] = []
+
+
+    items: list[AssembledMemoryItem] = Field(default_factory=list)
     total_memories: int = 0
     total_chars: int = 0
     max_context_chars: int

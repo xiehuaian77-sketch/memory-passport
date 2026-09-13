@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import Generic, TypeVar
+
 from pydantic import BaseModel, ConfigDict
 
 T = TypeVar("T")

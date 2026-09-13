@@ -1,17 +1,19 @@
-"""Transport layer for Memory Passport Python SDK.
-
-Handles HTTP communication using httpx with connection pooling, fine-grained
-timeouts, safe GET-only retry policy, credential masking, and structured error mapping.
-"""
+"""Transport layer for Memory Passport Python SDK."""
 
 from __future__ import annotations
 
+# Standard library imports
+import json
 import logging
 import time
-from typing import Any, Mapping
+from collections.abc import Mapping
+from types import TracebackType
+from typing import Any, Self
 
+# Third‑party imports
 import httpx
 
+# Local imports
 from memory_passport.exceptions import (
     APIError,
     AuthenticationError,
@@ -94,16 +96,16 @@ class MemoryPassportTransport:
         if self._owns_client:
             self._client.close()
 
-    def __enter__(self) -> "MemoryPassportTransport":
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    def __exit__(self, exc_type: object, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
         self.close()
 
     def _map_http_error(self, response: httpx.Response) -> APIError:
         status_code = response.status_code
         request_id = response.headers.get("x-request-id")
-        
+
         detail_msg = f"HTTP {status_code}"
         error_code = None
         details = None
@@ -116,7 +118,6 @@ class MemoryPassportTransport:
                 if isinstance(details, str):
                     detail_msg = details
                 elif isinstance(details, list) and details:
-                    # FastAPI validation error array
                     first_err = details[0]
                     if isinstance(first_err, dict) and "msg" in first_err:
                         detail_msg = first_err["msg"]
@@ -124,7 +125,7 @@ class MemoryPassportTransport:
                         detail_msg = str(details)
                 elif "message" in body:
                     detail_msg = str(body["message"])
-        except Exception:
+        except (ValueError, json.JSONDecodeError):
             detail_msg = response.text[:200] if response.text else f"HTTP {status_code}"
 
         if status_code == 401:

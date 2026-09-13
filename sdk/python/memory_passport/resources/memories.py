@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import datetime
 from typing import Any
+
 from memory_passport.models.common import MemoryStatus, MemoryType, SyncPage
 from memory_passport.models.memories import (
     Memory,

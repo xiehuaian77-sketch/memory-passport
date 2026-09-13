@@ -1,6 +1,7 @@
 """Tests for memories resource operations."""
 
 import json
+
 from memory_passport.models import MemoryStatus, MemoryType
 
 
