@@ -18,7 +18,7 @@ Responsibilities:
   style as other services.
 '''
 
-from __future__ import annotations
+from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
 
@@ -31,7 +31,10 @@ from app.repositories.memory_relationship_repo import (
     list_by_memory as repo_list_by_memory,
     list_related_memories as repo_list_related_memories,
 )
-from app.schemas.memory_relationship import RelationshipType
+from app.schemas.memory_relationship import (
+    RelatedMemoryOut,
+    RelationshipType,
+)
 from app.services.memory_service import get_memory_by_id
 
 # ---------------------------------------------------------------------------
@@ -236,27 +239,120 @@ async def list_related_memories(
     db,
     current_user_id: str,
     memory_id: str,
+    direction: str = "both",
+    relationship_type: RelationshipType | str | None = None,
+    confidence_min: float | None = None,
+    temporal_mode: str = "current",
+    reference_time: datetime | None = None,
     offset: int = 0,
     limit: int = 20,
-):
-    """Return target memories that are directly related to ``memory_id``.
+) -> list[RelatedMemoryOut]:
+    """Return target/source memories that are directly related to ``memory_id``.
 
     The underlying repository joins ``memory_relationships`` with ``memories``
     while enforcing ``user_id`` isolation for both the source and the target.
     """
+    # 1. Ownership & existence validation on the focus memory
     mem = await get_memory_by_id(db, memory_id=memory_id, user_id=current_user_id)
     if not mem:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Memory not found",
         )
-    return await repo_list_related_memories(
+
+    # 2. Limit defense
+    if limit < 1 or limit > 200:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="limit must be between 1 and 200",
+        )
+
+    # 3. Direction validation
+    if direction not in ("outgoing", "incoming", "both"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid direction: '{direction}'. Must be one of: outgoing, incoming, both",
+        )
+
+    # 4. Confidence filter validation
+    if confidence_min is not None and (confidence_min < 0.0 or confidence_min > 1.0):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="confidence_min must be between 0.0 and 1.0",
+        )
+
+    # 5. Relationship type validation
+    rel_type_enum: RelationshipType | None = None
+    if relationship_type is not None:
+        allowed_types = {
+            RelationshipType.UPDATES,
+            RelationshipType.SUPERSEDES,
+            RelationshipType.CONTRADICTS,
+            RelationshipType.RELEVANT_TO,
+        }
+        allowed_values = {t.value for t in allowed_types}
+        raw_type = (
+            relationship_type.value
+            if isinstance(relationship_type, RelationshipType)
+            else str(relationship_type)
+        )
+        if raw_type not in allowed_values:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported relationship_type: '{relationship_type}'. Allowed types: {', '.join(sorted(allowed_values))}",
+            )
+        rel_type_enum = RelationshipType(raw_type)
+
+    # 6. Temporal mode validation
+    if temporal_mode not in ("current", "historical", "any"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid temporal_mode: '{temporal_mode}'. Must be one of: current, historical, any",
+        )
+
+    # 7. Timezone normalization for reference_time
+    ref_now = reference_time
+    if ref_now is not None and ref_now.tzinfo is None:
+        ref_now = ref_now.replace(tzinfo=timezone.utc)
+
+    # 8. Query repository
+    rows = await repo_list_related_memories(
         db=db,
         user_id=current_user_id,
         memory_id=memory_id,
+        direction=direction,
+        relationship_type=rel_type_enum,
+        confidence_min=confidence_min,
+        temporal_mode=temporal_mode,
+        reference_time=ref_now,
         offset=offset,
-        limit=min(limit, 200),
+        limit=limit,
     )
+
+    # 9. Format response as RelatedMemoryOut
+    results = []
+    for r in rows:
+        results.append(
+            RelatedMemoryOut(
+                id=r["mem_id"],
+                memory_id=r["mem_id"],
+                user_id=r["mem_user_id"],
+                content=r["mem_content"],
+                memory_type=r["mem_memory_type"],
+                category=r["mem_memory_type"],
+                status=r["mem_status"],
+                importance=r["mem_importance"],
+                confidence=r["mem_confidence"],
+                valid_from=r["mem_valid_from"],
+                valid_until=r["mem_valid_until"],
+                superseded_by_memory_id=r["mem_superseded_by_memory_id"],
+                relationship_id=r["rel_id"],
+                relationship_type=r["rel_type"],
+                relationship_confidence=r["rel_confidence"],
+                direction=r["direction"],
+            )
+        )
+    return results
 
 # Exported symbols for ``__all__`` – helpful for static analysis.
 __all__ = [

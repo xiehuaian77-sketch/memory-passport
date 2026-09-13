@@ -4,7 +4,7 @@ Enforces strict authentication and user isolation. All endpoints verify that
 resources belong to the authenticated current_user.
 """
 
-from __future__ import annotations
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,10 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
-from app.schemas.memory import MemoryOut
 from app.schemas.memory_relationship import (
     MemoryRelationshipCreate,
     MemoryRelationshipOut,
+    RelatedMemoryOut,
 )
 from app.services import memory_relationship_service, memory_service
 
@@ -103,20 +103,35 @@ async def delete_relationship_endpoint(
 
 @router.get(
     "/{memory_id}/related",
-    response_model=list[MemoryOut],
+    response_model=list[RelatedMemoryOut],
 )
 async def list_related_memories_endpoint(
     memory_id: str,
+    direction: str = Query(default="both", description="Direction: outgoing, incoming, both"),
+    relationship_type: str | None = Query(default=None, description="Relationship type filter"),
+    confidence_min: float | None = Query(default=None, description="Minimum relationship confidence [0.0, 1.0]"),
+    temporal_mode: str = Query(default="current", description="Temporal mode: current, historical, any"),
+    reference_time: datetime | None = Query(default=None, description="ISO 8601 reference time"),
     offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=20, ge=1, le=200),
+    limit: int = Query(default=20, description="Page limit, 1 <= limit <= 200"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Retrieve one-hop related memories for memory_id."""
+    """Retrieve one-hop related memories for memory_id with edge metadata."""
+    if limit < 1 or limit > 200:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="limit must be between 1 and 200",
+        )
     return await memory_relationship_service.list_related_memories(
         db=db,
         current_user_id=user.id,
         memory_id=memory_id,
+        direction=direction,
+        relationship_type=relationship_type,
+        confidence_min=confidence_min,
+        temporal_mode=temporal_mode,
+        reference_time=reference_time,
         offset=offset,
         limit=limit,
     )

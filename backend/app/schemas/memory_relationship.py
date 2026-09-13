@@ -38,3 +38,40 @@ class MemoryRelationshipOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class DirectionType(str, Enum):
+    OUTGOING = "outgoing"
+    INCOMING = "incoming"
+    BOTH = "both"
+
+
+class TemporalMode(str, Enum):
+    CURRENT = "current"
+    HISTORICAL = "historical"
+    ANY = "any"
+
+
+class RelatedMemoryOut(BaseModel):
+    """Schema representing a related memory and its connecting edge."""
+    id: str
+    memory_id: str
+    user_id: str
+    content: str
+    memory_type: str = "fact"
+    category: str = "fact"
+    status: str = "active"
+    importance: float = 0.5
+    confidence: float = 1.0
+    valid_from: datetime | None = None
+    valid_until: datetime | None = None
+    superseded_by_memory_id: str | None = None
+
+    # Relationship edge metadata
+    relationship_id: str
+    relationship_type: RelationshipType
+    relationship_confidence: float
+    direction: str  # "outgoing" | "incoming"
+
+    class Config:
+        from_attributes = True
