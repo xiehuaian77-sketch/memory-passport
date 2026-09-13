@@ -701,6 +701,26 @@ async def retrieve_context(
     policy = MemoryRetrievalPolicy(policy_config)
     scored_memories = policy.apply(search_results)
 
+    if getattr(request, "graph_enabled", False):
+        from app.services.graph_retrieval_service import GraphAwareRetrievalService
+
+        scored_memories = await GraphAwareRetrievalService.expand_and_rerank(
+            db,
+            user_id=user_id,
+            base_scored_memories=scored_memories,
+            graph_enabled=True,
+            graph_seed_limit=getattr(request, "graph_seed_limit", 5),
+            graph_max_expanded=getattr(request, "graph_max_expanded", 20),
+            top_k=policy_config.top_k,
+            min_relevance=policy_config.min_relevance,
+            min_importance=policy_config.min_importance,
+            min_confidence=policy_config.min_confidence,
+            memory_types=policy_config.memory_types,
+            temporal_mode=temporal_mode,
+            reference_time=reference_time,
+            status=status_filter,
+        )
+
     assembly_config = ContextAssemblyConfig(
         max_memories=getattr(request, "max_memories", 10),
         max_content_chars=getattr(request, "max_content_chars", 500),

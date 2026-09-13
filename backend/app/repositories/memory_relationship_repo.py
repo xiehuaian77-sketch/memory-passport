@@ -271,3 +271,137 @@ async def list_related_memories(
 
     result = await db.execute(stmt)
     return [dict(row) for row in result.mappings().all()]
+
+
+# ------------------------------------------------------------
+# BATCH ONE‑HOP related memories query (for graph retrieval)
+# ------------------------------------------------------------
+async def list_batch_related_memories(
+    db: AsyncSession,
+    user_id: str,
+    memory_ids: Sequence[str],
+    temporal_mode: str = "current",
+    reference_time: datetime | None = None,
+    status: str | None = "active",
+    limit: int = 50,
+) -> list[dict]:
+    """Return 1-hop related memories connected to any of the given seed `memory_ids`.
+
+    Executes bounded, indexed batch queries (strictly 1-hop, no N+1).
+    Enforces user isolation and temporal validity constraints.
+    Returns list of dicts:
+        {
+            "memory": Memory,
+            "seed_id": str,
+            "rel_type": RelationshipType,
+            "rel_confidence": float | None,
+            "rel_id": str,
+            "direction": "outgoing" | "incoming",
+        }
+    """
+    valid_seed_ids = list({str(m) for m in memory_ids if m})
+    if not valid_seed_ids:
+        return []
+
+    safe_limit = max(1, min(limit, 200))
+    ref_now = reference_time or datetime.now(timezone.utc)
+    if ref_now.tzinfo is None:
+        ref_now = ref_now.replace(tzinfo=timezone.utc)
+
+    # 1. Temporal filter conditions on the related Memory
+    mem_temporal_conditions = []
+    if temporal_mode == "current":
+        mem_temporal_conditions.extend([
+            Memory.status == "active",
+            Memory.superseded_by_memory_id.is_(None),
+            or_(Memory.valid_until.is_(None), Memory.valid_until > ref_now),
+            or_(Memory.valid_from.is_(None), Memory.valid_from <= ref_now),
+        ])
+    elif temporal_mode == "historical":
+        mem_temporal_conditions.append(
+            or_(
+                Memory.status.in_(["superseded", "archived"]),
+                Memory.superseded_by_memory_id.is_not(None),
+                and_(Memory.valid_until.is_not(None), Memory.valid_until <= ref_now),
+            )
+        )
+    elif temporal_mode == "any":
+        if status is not None:
+            mem_temporal_conditions.append(Memory.status == status)
+
+    # 2. Outgoing query (seed is source, neighbor is target)
+    q_out = (
+        select(
+            Memory,
+            MemoryRelationship.source_memory_id.label("seed_id"),
+            MemoryRelationship.relationship_type.label("rel_type"),
+            MemoryRelationship.confidence.label("rel_confidence"),
+            MemoryRelationship.id.label("rel_id"),
+            literal("outgoing").label("direction"),
+        )
+        .join(
+            MemoryRelationship,
+            and_(
+                MemoryRelationship.target_memory_id == Memory.id,
+                MemoryRelationship.source_memory_id.in_(valid_seed_ids),
+                MemoryRelationship.user_id == user_id,
+            ),
+        )
+        .where(
+            Memory.user_id == user_id,
+            *mem_temporal_conditions,
+        )
+        .order_by(MemoryRelationship.created_at.desc(), MemoryRelationship.id.desc())
+        .limit(safe_limit)
+    )
+
+    # 3. Incoming query (seed is target, neighbor is source)
+    q_in = (
+        select(
+            Memory,
+            MemoryRelationship.target_memory_id.label("seed_id"),
+            MemoryRelationship.relationship_type.label("rel_type"),
+            MemoryRelationship.confidence.label("rel_confidence"),
+            MemoryRelationship.id.label("rel_id"),
+            literal("incoming").label("direction"),
+        )
+        .join(
+            MemoryRelationship,
+            and_(
+                MemoryRelationship.source_memory_id == Memory.id,
+                MemoryRelationship.target_memory_id.in_(valid_seed_ids),
+                MemoryRelationship.user_id == user_id,
+            ),
+        )
+        .where(
+            Memory.user_id == user_id,
+            *mem_temporal_conditions,
+        )
+        .order_by(MemoryRelationship.created_at.desc(), MemoryRelationship.id.desc())
+        .limit(safe_limit)
+    )
+
+    res_out = await db.execute(q_out)
+    res_in = await db.execute(q_in)
+
+    records: list[dict] = []
+    for row in res_out.all():
+        records.append({
+            "memory": row[0],
+            "seed_id": str(row[1]),
+            "rel_type": row[2],
+            "rel_confidence": row[3],
+            "rel_id": str(row[4]),
+            "direction": str(row[5]),
+        })
+    for row in res_in.all():
+        records.append({
+            "memory": row[0],
+            "seed_id": str(row[1]),
+            "rel_type": row[2],
+            "rel_confidence": row[3],
+            "rel_id": str(row[4]),
+            "direction": str(row[5]),
+        })
+
+    return records

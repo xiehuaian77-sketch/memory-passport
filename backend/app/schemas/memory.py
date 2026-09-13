@@ -482,6 +482,22 @@ class MemoryRetrievalRequest(BaseModel):
         default=None,
         description="Reference point in time to evaluate validity against",
     )
+    graph_enabled: bool = Field(
+        default=False,
+        description="Enable 1-hop relationship graph expansion as secondary retrieval signal",
+    )
+    graph_seed_limit: int = Field(
+        default=5,
+        ge=1,
+        le=10,
+        description="Max base seeds for graph expansion (default 5, hard limit 10)",
+    )
+    graph_max_expanded: int = Field(
+        default=20,
+        ge=1,
+        le=50,
+        description="Max expanded memories from graph (default 20, hard limit 50)",
+    )
 
     model_config = {"extra": "ignore"}
 
