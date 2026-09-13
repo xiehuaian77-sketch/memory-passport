@@ -37,6 +37,9 @@ class AuditAction(str, Enum):
     EXTRACT_CANDIDATE = "EXTRACT_CANDIDATE"
     CONFLICT_DETECTED = "CONFLICT_DETECTED"
     SUPERSEDE = "SUPERSEDE"
+    # New actions for memory relationships
+    RELATIONSHIP_CREATE = "RELATIONSHIP_CREATE"
+    RELATIONSHIP_DELETE = "RELATIONSHIP_DELETE"
 
 
 class MemoryAuditLog(Base):

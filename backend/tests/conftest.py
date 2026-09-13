@@ -16,8 +16,12 @@ os.environ["LLM_API_KEY"] = ""
 os.environ["EMBEDDING_API_KEY"] = ""
 os.environ["MCP_API_KEY"] = "test-mcp-key"
 
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from app.database import get_db  # noqa: E402
 from app.main import app  # noqa: E402
+
 from app.models.base import Base  # noqa: E402
 
 
