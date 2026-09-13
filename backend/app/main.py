@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import init_db
 from app.mcp.router import router as mcp_standard_router
-from app.routers import auth, chat, conversations, mcp, memories, memory_relationships, search
+from app.routers import auth, chat, conversations, evaluation, mcp, memories, memory_relationships, search
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -50,6 +50,7 @@ app.include_router(conversations.router)
 app.include_router(chat.router)
 app.include_router(mcp.router)
 app.include_router(mcp_standard_router)
+app.include_router(evaluation.router)
 
 
 @app.get("/health")

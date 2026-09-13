@@ -14,6 +14,11 @@ import type {
   TokenResponse,
   User,
   UserMemoryPolicy,
+  EvaluationDataset,
+  EvaluationCase,
+  EvaluationRun,
+  EvaluationResult,
+  MemoryQualityResult,
 } from '@/types';
 
 const BASE = ''; // proxied via next.config.js rewrites
@@ -440,4 +445,175 @@ export async function supersedeMemory(
     }),
   });
   return handleResponse<Memory>(res);
+}
+
+// ---------- Evaluation API (Phase 5.6E) ----------
+
+export async function listEvaluationDatasets(
+  token: string,
+  offset = 0,
+  limit = 50
+): Promise<EvaluationDataset[]> {
+  const res = await fetch(`${BASE}/api/evaluation/datasets?offset=${offset}&limit=${limit}`, {
+    headers: authHeaders(token),
+  });
+  return handleResponse<EvaluationDataset[]>(res);
+}
+
+export async function getEvaluationDataset(
+  token: string,
+  id: string
+): Promise<EvaluationDataset> {
+  const res = await fetch(`${BASE}/api/evaluation/datasets/${id}`, {
+    headers: authHeaders(token),
+  });
+  return handleResponse<EvaluationDataset>(res);
+}
+
+export async function createEvaluationDataset(
+  token: string,
+  data: { name: string; description?: string; is_system?: boolean }
+): Promise<EvaluationDataset> {
+  const res = await fetch(`${BASE}/api/evaluation/datasets`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({
+      name: data.name,
+      description: data.description || '',
+      is_system: data.is_system || false,
+    }),
+  });
+  return handleResponse<EvaluationDataset>(res);
+}
+
+export async function listEvaluationCases(
+  token: string,
+  datasetId: string,
+  offset = 0,
+  limit = 50
+): Promise<EvaluationCase[]> {
+  const res = await fetch(
+    `${BASE}/api/evaluation/datasets/${datasetId}/cases?offset=${offset}&limit=${limit}`,
+    {
+      headers: authHeaders(token),
+    }
+  );
+  return handleResponse<EvaluationCase[]>(res);
+}
+
+export async function createEvaluationCase(
+  token: string,
+  datasetId: string,
+  data: {
+    query: string;
+    expected_memory_ids?: string[];
+    expected_relevance?: Record<string, number>;
+    tags?: string;
+    temporal_anchor?: string | null;
+  }
+): Promise<EvaluationCase> {
+  const res = await fetch(`${BASE}/api/evaluation/datasets/${datasetId}/cases`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({
+      query: data.query,
+      expected_memory_ids: data.expected_memory_ids || [],
+      expected_relevance: data.expected_relevance || {},
+      tags: data.tags || '',
+      temporal_anchor: data.temporal_anchor || null,
+    }),
+  });
+  return handleResponse<EvaluationCase>(res);
+}
+
+export async function listEvaluationRuns(
+  token: string,
+  datasetId: string,
+  offset = 0,
+  limit = 50
+): Promise<EvaluationRun[]> {
+  const res = await fetch(
+    `${BASE}/api/evaluation/datasets/${datasetId}/runs?offset=${offset}&limit=${limit}`,
+    {
+      headers: authHeaders(token),
+    }
+  );
+  return handleResponse<EvaluationRun[]>(res);
+}
+
+export async function getEvaluationRun(
+  token: string,
+  runId: string
+): Promise<EvaluationRun> {
+  const res = await fetch(`${BASE}/api/evaluation/runs/${runId}`, {
+    headers: authHeaders(token),
+  });
+  return handleResponse<EvaluationRun>(res);
+}
+
+export async function createEvaluationRun(
+  token: string,
+  datasetId: string,
+  data: {
+    name: string;
+    app_version?: string;
+    retrieval_config?: Record<string, any>;
+  }
+): Promise<EvaluationRun> {
+  const res = await fetch(`${BASE}/api/evaluation/datasets/${datasetId}/runs`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({
+      name: data.name,
+      app_version: data.app_version || '1.9.0',
+      retrieval_config: data.retrieval_config || {},
+    }),
+  });
+  return handleResponse<EvaluationRun>(res);
+}
+
+export async function executeEvaluationRun(
+  token: string,
+  runId: string
+): Promise<EvaluationRun> {
+  const res = await fetch(`${BASE}/api/evaluation/runs/${runId}/execute`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  });
+  return handleResponse<EvaluationRun>(res);
+}
+
+export async function getEvaluationRunMetrics(
+  token: string,
+  runId: string
+): Promise<Record<string, any>> {
+  const res = await fetch(`${BASE}/api/evaluation/runs/${runId}/metrics`, {
+    headers: authHeaders(token),
+  });
+  return handleResponse<Record<string, any>>(res);
+}
+
+export async function listEvaluationRunResults(
+  token: string,
+  runId: string,
+  offset = 0,
+  limit = 50
+): Promise<EvaluationResult[]> {
+  const res = await fetch(
+    `${BASE}/api/evaluation/runs/${runId}/results?offset=${offset}&limit=${limit}`,
+    {
+      headers: authHeaders(token),
+    }
+  );
+  return handleResponse<EvaluationResult[]>(res);
+}
+
+export async function getMemoryQuality(
+  token: string,
+  memoryId: string
+): Promise<MemoryQualityResult> {
+  const res = await fetch(`${BASE}/api/evaluation/memories/${memoryId}/quality`, {
+    headers: authHeaders(token),
+  });
+  return handleResponse<MemoryQualityResult>(res);
 }

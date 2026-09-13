@@ -40,6 +40,14 @@ from memory_passport.models.conversations import (
     ConversationMessage,
 )
 from memory_passport.models.chat import ChatMessageInput, ChatResponse, ExtractedMemory
+from memory_passport.models.evaluation import (
+    EvaluationCase,
+    EvaluationDataset,
+    EvaluationResult,
+    EvaluationRun,
+    EvaluationRunMetrics,
+    MemoryQuality,
+)
 
 __all__ = [
     "BaseSDKModel",
@@ -77,4 +85,10 @@ __all__ = [
     "ChatMessageInput",
     "ChatResponse",
     "ExtractedMemory",
+    "EvaluationDataset",
+    "EvaluationCase",
+    "EvaluationRun",
+    "EvaluationResult",
+    "EvaluationRunMetrics",
+    "MemoryQuality",
 ]

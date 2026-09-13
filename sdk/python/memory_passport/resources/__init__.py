@@ -9,6 +9,7 @@ from memory_passport.resources.governance import GovernanceResource
 from memory_passport.resources.audit import AuditResource
 from memory_passport.resources.conversations import ConversationsResource
 from memory_passport.resources.chat import ChatResource
+from memory_passport.resources.evaluation import EvaluationResource
 
 __all__ = [
     "MemoriesResource",
@@ -20,4 +21,5 @@ __all__ = [
     "AuditResource",
     "ConversationsResource",
     "ChatResource",
+    "EvaluationResource",
 ]

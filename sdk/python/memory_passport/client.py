@@ -11,6 +11,7 @@ from memory_passport.resources.audit import AuditResource
 from memory_passport.resources.chat import ChatResource
 from memory_passport.resources.conflicts import ConflictsResource
 from memory_passport.resources.conversations import ConversationsResource
+from memory_passport.resources.evaluation import EvaluationResource
 from memory_passport.resources.governance import GovernanceResource
 from memory_passport.resources.graph import GraphResource
 from memory_passport.resources.lifecycle import LifecycleResource
@@ -77,6 +78,7 @@ class MemoryPassportClient:
         self.audit = AuditResource(self._transport)
         self.conversations = ConversationsResource(self._transport)
         self.chat = ChatResource(self._transport)
+        self.evaluation = EvaluationResource(self._transport)
 
     @property
     def base_url(self) -> str:

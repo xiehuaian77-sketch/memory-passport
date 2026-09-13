@@ -208,3 +208,75 @@ export interface ConflictDetectionResponse {
   has_conflict: boolean;
   conflicts: ConflictItem[];
 }
+
+// ---------- Evaluation Types (Phase 5.6E) ----------
+
+export interface EvaluationDataset {
+  id: string;
+  user_id: string;
+  name: string;
+  description: string;
+  is_system: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EvaluationCase {
+  id: string;
+  dataset_id: string;
+  user_id: string;
+  query: string;
+  expected_memory_ids: string[];
+  expected_relevance: Record<string, number>;
+  tags: string;
+  temporal_anchor: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EvaluationRun {
+  id: string;
+  dataset_id: string;
+  user_id: string;
+  name: string;
+  app_version: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  retrieval_config: Record<string, any>;
+  summary_metrics: Record<string, any> | null;
+  error_message: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface EvaluationResult {
+  id: string;
+  run_id: string;
+  case_id: string;
+  user_id: string;
+  retrieved_memory_ids: string[];
+  scores: number[];
+  metrics: Record<string, any>;
+  latency_ms: number;
+  context_chars: number;
+  passed: boolean;
+  details: Record<string, any> | null;
+  created_at: string;
+}
+
+export interface QualityDimensionScore {
+  name: string;
+  score: number;
+  weight: number;
+  reason: string;
+  raw_risk: number | null;
+}
+
+export interface MemoryQualityResult {
+  memory_id: string;
+  user_id: string;
+  overall_score: number;
+  dimensions: Record<string, QualityDimensionScore>;
+  warnings: string[];
+  evaluated_at: string;
+  summary_reason: string;
+}
