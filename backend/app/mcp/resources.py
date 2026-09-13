@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
+from app.mcp.constants import DEFAULT_CACHE_SCOPE, DEFAULT_TTL_MS
 from app.mcp.protocol import ResourceDefinition
 from app.schemas.memory import MemoryRetrievalRequest
 from app.services import memory_service
@@ -74,7 +75,9 @@ class MCPResourceRegistry:
                         "mimeType": "application/json",
                         "text": json.dumps(payload, ensure_ascii=False),
                     }
-                ]
+                ],
+                "ttlMs": DEFAULT_TTL_MS,
+                "cacheScope": DEFAULT_CACHE_SCOPE,
             }
 
         elif scheme == "context" and path == "current":
@@ -92,7 +95,9 @@ class MCPResourceRegistry:
                         "mimeType": "text/plain",
                         "text": ctx.format_text(),
                     }
-                ]
+                ],
+                "ttlMs": DEFAULT_TTL_MS,
+                "cacheScope": DEFAULT_CACHE_SCOPE,
             }
 
         raise ValueError(f"Unsupported resource URI scheme or path: '{uri}'")

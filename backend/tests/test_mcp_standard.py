@@ -838,3 +838,156 @@ async def test_mcp_duplicate_tool_calls_independent(auth_client: AsyncClient):
     _, r1 = await post_mcp(auth_client, {"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
     _, r2 = await post_mcp(auth_client, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
     assert len(r1["result"]["tools"]) == len(r2["result"]["tools"])
+
+
+@pytest.mark.asyncio
+async def test_mcp_cache_hints_tools_and_resources(auth_client: AsyncClient):
+    """tools/list, resources/list, and resources/read must include ttlMs and cacheScope."""
+    # 1. tools/list
+    status, t_res = await post_mcp(auth_client, {"jsonrpc": "2.0", "id": "t-cache", "method": "tools/list"})
+    assert status == 200
+    assert t_res["result"]["ttlMs"] == 0
+    assert t_res["result"]["cacheScope"] == "private"
+
+    # 2. resources/list
+    status, r_res = await post_mcp(auth_client, {"jsonrpc": "2.0", "id": "r-cache", "method": "resources/list"})
+    assert status == 200
+    assert r_res["result"]["ttlMs"] == 0
+    assert r_res["result"]["cacheScope"] == "private"
+
+    # 3. resources/read
+    status, rd_res = await post_mcp(auth_client, {
+        "jsonrpc": "2.0", "id": "rd-cache", "method": "resources/read",
+        "params": {"uri": "context://current"},
+    })
+    assert status == 200
+    assert rd_res["result"]["ttlMs"] == 0
+    assert rd_res["result"]["cacheScope"] == "private"
+
+
+@pytest.mark.asyncio
+async def test_mcp_request_meta_handling(auth_client: AsyncClient):
+    """Modern request params._meta validation and protocol version matching."""
+    # 1. Valid _meta with matching version and untrusted clientInfo/clientCapabilities
+    status, res = await post_mcp(auth_client, {
+        "jsonrpc": "2.0",
+        "id": "meta-ok",
+        "method": "tools/list",
+        "params": {
+            "_meta": {
+                "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                "io.modelcontextprotocol/clientInfo": {"name": "test-agent", "version": "1.0"},
+                "io.modelcontextprotocol/clientCapabilities": {"tools": {}},
+            }
+        },
+    }, headers={"MCP-Protocol-Version": "2026-07-28"})
+    assert status == 200
+    assert "tools" in res["result"]
+
+    # 2. Header and _meta protocolVersion mismatch must be rejected with 400
+    status, err_res = await post_mcp(auth_client, {
+        "jsonrpc": "2.0",
+        "id": "meta-mismatch",
+        "method": "tools/list",
+        "params": {
+            "_meta": {
+                "io.modelcontextprotocol/protocolVersion": "2025-11-25",
+            }
+        },
+    }, headers={"MCP-Protocol-Version": "2026-07-28"})
+    assert status == 400
+    assert "does not match" in err_res["error"]["message"]
+
+    # 3. Unsupported version in _meta without header must also be rejected
+    resp_raw = await auth_client.post("/mcp", json={
+        "jsonrpc": "2.0",
+        "id": "meta-unsupported",
+        "method": "tools/list",
+        "params": {
+            "_meta": {
+                "io.modelcontextprotocol/protocolVersion": "1999-01-01",
+            }
+        },
+    }, headers={"content-type": "application/json"})
+    assert resp_raw.status_code == 400
+    err_res2 = resp_raw.json()
+    assert "Unsupported protocolVersion in _meta" in err_res2["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_mcp_response_server_info_meta(auth_client: AsyncClient):
+    """All MCP responses must carry server identity in _meta namespace."""
+    methods_to_test = [
+        ("server/discover", {}),
+        ("tools/list", {}),
+        ("resources/list", {}),
+        ("resources/read", {"uri": "context://current"}),
+        ("ping", {}),
+    ]
+
+    for method, params in methods_to_test:
+        req = {"jsonrpc": "2.0", "id": f"srv-meta-{method}", "method": method}
+        if params:
+            req["params"] = params
+        status, res = await post_mcp(auth_client, req)
+        assert status == 200, f"Method {method} failed with status {status}"
+
+        # Check top-level _meta or result._meta
+        meta = res.get("_meta") or res.get("result", {}).get("_meta")
+        assert meta is not None, f"Method {method} missing _meta"
+        server_info = meta.get("io.modelcontextprotocol/serverInfo")
+        assert server_info is not None, f"Method {method} missing serverInfo in _meta"
+        assert server_info["name"] == "memory-passport"
+        assert server_info["version"] == "1.9.0"
+
+
+@pytest.mark.asyncio
+async def test_mcp_ping_custom_non_standard(auth_client: AsyncClient):
+    """Ping is a custom non-standard extension and must not be advertised."""
+    # 1. Discover capabilities do not advertise ping
+    _, disc = await post_mcp(auth_client, {"jsonrpc": "2.0", "id": "disc", "method": "server/discover"})
+    caps = disc["result"]["capabilities"]
+    assert "ping" not in caps
+
+    # 2. tools/list does not include ping
+    _, t_list = await post_mcp(auth_client, {"jsonrpc": "2.0", "id": "t-list", "method": "tools/list"})
+    tool_names = [t["name"] for t in t_list["result"]["tools"]]
+    assert "ping" not in tool_names
+
+    # 3. Ping call succeeds with {} result
+    status, ping_res = await post_mcp(auth_client, {"jsonrpc": "2.0", "id": "p-1", "method": "ping"})
+    assert status == 200
+    assert ping_res["result"] == {}
+
+
+@pytest.mark.asyncio
+async def test_mcp_official_sdk_models_compatibility(auth_client: AsyncClient):
+    """Wire response results validate directly against official mcp.types schemas."""
+    try:
+        import mcp.types as mcp_types
+    except ImportError:
+        pytest.skip("mcp package not installed in environment")
+
+    # 1. Validate ListToolsResult
+    _, t_res = await post_mcp(auth_client, {"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+    tools_model = mcp_types.ListToolsResult.model_validate(t_res["result"])
+    assert len(tools_model.tools) == 15
+    assert tools_model.ttl_ms == 0
+    assert tools_model.cache_scope == "private"
+
+    # 2. Validate ListResourcesResult
+    _, r_res = await post_mcp(auth_client, {"jsonrpc": "2.0", "id": 2, "method": "resources/list"})
+    res_model = mcp_types.ListResourcesResult.model_validate(r_res["result"])
+    assert len(res_model.resources) == 2
+    assert res_model.ttl_ms == 0
+    assert res_model.cache_scope == "private"
+
+    # 3. Validate ReadResourceResult
+    _, rd_res = await post_mcp(auth_client, {
+        "jsonrpc": "2.0", "id": 3, "method": "resources/read",
+        "params": {"uri": "context://current"},
+    })
+    read_model = mcp_types.ReadResourceResult.model_validate(rd_res["result"])
+    assert len(read_model.contents) >= 1
+    assert read_model.ttl_ms == 0
+    assert read_model.cache_scope == "private"

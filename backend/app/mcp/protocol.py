@@ -74,10 +74,29 @@ def make_jsonrpc_error(
     }
 
 
-def make_jsonrpc_result(req_id: str | int | None, result: Any) -> dict[str, Any]:
-    """Helper to build a compliant JSON-RPC 2.0 success dict."""
+from app.mcp.constants import META_SERVER_INFO_KEY, SERVER_INFO
+
+
+def make_jsonrpc_result(
+    req_id: str | int | None,
+    result: Any,
+    *,
+    server_info: dict[str, Any] | None = None,
+    inject_meta_in_result: bool = True,
+) -> dict[str, Any]:
+    """Helper to build a compliant JSON-RPC 2.0 success dict with modern MCP _meta."""
+    meta = {
+        META_SERVER_INFO_KEY: server_info or SERVER_INFO,
+    }
+    if inject_meta_in_result and isinstance(result, dict):
+        if "_meta" in result and isinstance(result["_meta"], dict):
+            result["_meta"].update(meta)
+        else:
+            result["_meta"] = meta
+
     return {
         "jsonrpc": "2.0",
         "id": req_id,
         "result": result,
+        "_meta": meta,
     }

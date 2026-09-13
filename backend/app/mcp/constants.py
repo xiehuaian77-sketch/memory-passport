@@ -22,3 +22,21 @@ MAX_TOOL_ARG_STRING_LENGTH = 32 * 1024  # 32 KB
 MAX_SEARCH_LIMIT = 50
 MAX_RELATED_LIMIT = 20
 MAX_CONTEXT_CHARS = 4000
+
+# Server Identity
+SERVER_NAME = "memory-passport"
+SERVER_VERSION = "1.9.0"
+SERVER_INFO = {
+    "name": SERVER_NAME,
+    "version": SERVER_VERSION,
+}
+
+# MCP 2026-07-28 Reserved Metadata Keys
+META_SERVER_INFO_KEY = "io.modelcontextprotocol/serverInfo"
+META_PROTOCOL_VERSION_KEY = "io.modelcontextprotocol/protocolVersion"
+META_CLIENT_INFO_KEY = "io.modelcontextprotocol/clientInfo"
+META_CLIENT_CAPABILITIES_KEY = "io.modelcontextprotocol/clientCapabilities"
+
+# Cache hints defaults
+DEFAULT_TTL_MS = 0
+DEFAULT_CACHE_SCOPE = "private"

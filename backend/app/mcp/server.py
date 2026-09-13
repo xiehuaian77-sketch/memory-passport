@@ -17,6 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
 from app.mcp.constants import (
+    DEFAULT_CACHE_SCOPE,
+    DEFAULT_TTL_MS,
     JSONRPC_INTERNAL_ERROR,
     JSONRPC_INVALID_PARAMS,
     JSONRPC_INVALID_REQUEST,
@@ -83,7 +85,11 @@ class MCPServer:
             # 2. Tools
             elif method == "tools/list":
                 tools = tool_registry.list_tools()
-                return make_jsonrpc_result(req_id, {"tools": tools})
+                return make_jsonrpc_result(req_id, {
+                    "tools": tools,
+                    "ttlMs": DEFAULT_TTL_MS,
+                    "cacheScope": DEFAULT_CACHE_SCOPE,
+                })
 
             elif method == "tools/call":
                 if not isinstance(params, dict):
@@ -118,7 +124,11 @@ class MCPServer:
             # 3. Resources
             elif method == "resources/list":
                 resources = resource_registry.list_resources()
-                return make_jsonrpc_result(req_id, {"resources": resources})
+                return make_jsonrpc_result(req_id, {
+                    "resources": resources,
+                    "ttlMs": DEFAULT_TTL_MS,
+                    "cacheScope": DEFAULT_CACHE_SCOPE,
+                })
 
             elif method == "resources/read":
                 if not isinstance(params, dict):
@@ -130,6 +140,9 @@ class MCPServer:
 
                 try:
                     res = await resource_registry.read_resource(uri, user=user, db=db)
+                    if isinstance(res, dict):
+                        res.setdefault("ttlMs", DEFAULT_TTL_MS)
+                        res.setdefault("cacheScope", DEFAULT_CACHE_SCOPE)
                     return make_jsonrpc_result(req_id, res)
                 except KeyError:
                     return make_jsonrpc_error(req_id, -32004, f"Resource '{uri}' not found")
@@ -138,9 +151,11 @@ class MCPServer:
                 except Exception as ex:
                     return make_jsonrpc_error(req_id, JSONRPC_INTERNAL_ERROR, f"Resource read error: {ex}")
 
-            # 4. Ping
+            # 4. Ping (NON-STANDARD CUSTOM EXTENSION)
+            # Safe, stateless, unadvertised utility extension for lightweight liveness checks.
+            # Not part of standard MCP 2026-07-28 capabilities or tools/list.
             elif method == "ping":
-                return make_jsonrpc_result(req_id, {})
+                return make_jsonrpc_result(req_id, {}, inject_meta_in_result=False)
 
             else:
                 return make_jsonrpc_error(req_id, JSONRPC_METHOD_NOT_FOUND, f"Method '{method}' not found")

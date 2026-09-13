@@ -23,9 +23,13 @@ from app.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
 from app.mcp.constants import (
+    JSONRPC_INVALID_PARAMS,
     JSONRPC_INVALID_REQUEST,
     MAX_REQUEST_BODY_BYTES,
     MCP_PROTOCOL_VERSION,
+    META_CLIENT_CAPABILITIES_KEY,
+    META_CLIENT_INFO_KEY,
+    META_PROTOCOL_VERSION_KEY,
     SUPPORTED_PROTOCOL_VERSIONS,
 )
 from app.mcp.protocol import make_jsonrpc_error
@@ -139,7 +143,101 @@ async def mcp_post_endpoint(
             headers={"MCP-Protocol-Version": MCP_PROTOCOL_VERSION},
         )
 
-    # 6. Dispatch to MCPServer
+    # 6. Modern request _meta validation (MCP 2026-07-28)
+    params = body.get("params")
+    meta = None
+    if isinstance(params, dict) and "_meta" in params:
+        meta = params.get("_meta")
+    elif "_meta" in body:
+        meta = body.get("_meta")
+
+    if meta is not None:
+        if not isinstance(meta, dict):
+            err = make_jsonrpc_error(
+                body.get("id"),
+                JSONRPC_INVALID_PARAMS,
+                "Request _meta must be an object",
+            )
+            return Response(
+                content=json.dumps(err),
+                media_type="application/json",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                headers={"MCP-Protocol-Version": MCP_PROTOCOL_VERSION},
+            )
+
+        # 6a. Check io.modelcontextprotocol/protocolVersion
+        meta_proto = meta.get(META_PROTOCOL_VERSION_KEY)
+        if meta_proto is not None:
+            if not isinstance(meta_proto, str):
+                err = make_jsonrpc_error(
+                    body.get("id"),
+                    JSONRPC_INVALID_PARAMS,
+                    f"{META_PROTOCOL_VERSION_KEY} in _meta must be a string",
+                )
+                return Response(
+                    content=json.dumps(err),
+                    media_type="application/json",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    headers={"MCP-Protocol-Version": MCP_PROTOCOL_VERSION},
+                )
+
+            # If both header and _meta provided, they MUST match!
+            if mcp_protocol_version and mcp_protocol_version != meta_proto:
+                err = make_jsonrpc_error(
+                    body.get("id"),
+                    JSONRPC_INVALID_REQUEST,
+                    f"Header MCP-Protocol-Version ('{mcp_protocol_version}') does not match _meta protocolVersion ('{meta_proto}')",
+                )
+                return Response(
+                    content=json.dumps(err),
+                    media_type="application/json",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    headers={"MCP-Protocol-Version": MCP_PROTOCOL_VERSION},
+                )
+
+            if meta_proto not in SUPPORTED_PROTOCOL_VERSIONS:
+                err = make_jsonrpc_error(
+                    body.get("id"),
+                    JSONRPC_INVALID_REQUEST,
+                    f"Unsupported protocolVersion in _meta: '{meta_proto}'. Supported: {list(SUPPORTED_PROTOCOL_VERSIONS)}",
+                )
+                return Response(
+                    content=json.dumps(err),
+                    media_type="application/json",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    headers={"MCP-Protocol-Version": MCP_PROTOCOL_VERSION},
+                )
+
+        # 6b. Check clientInfo and clientCapabilities
+        client_info = meta.get(META_CLIENT_INFO_KEY)
+        if client_info is not None and not isinstance(client_info, dict):
+            err = make_jsonrpc_error(
+                body.get("id"),
+                JSONRPC_INVALID_PARAMS,
+                f"{META_CLIENT_INFO_KEY} in _meta must be an object",
+            )
+            return Response(
+                content=json.dumps(err),
+                media_type="application/json",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                headers={"MCP-Protocol-Version": MCP_PROTOCOL_VERSION},
+            )
+
+        client_caps = meta.get(META_CLIENT_CAPABILITIES_KEY)
+        if client_caps is not None and not isinstance(client_caps, dict):
+            err = make_jsonrpc_error(
+                body.get("id"),
+                JSONRPC_INVALID_PARAMS,
+                f"{META_CLIENT_CAPABILITIES_KEY} in _meta must be an object",
+            )
+            return Response(
+                content=json.dumps(err),
+                media_type="application/json",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                headers={"MCP-Protocol-Version": MCP_PROTOCOL_VERSION},
+            )
+
+    # 7. Dispatch to MCPServer
     result = await mcp_server.handle_request(body, user=user, db=db)
 
     return Response(
