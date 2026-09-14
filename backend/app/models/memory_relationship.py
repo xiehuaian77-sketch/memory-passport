@@ -19,6 +19,7 @@ Business rules (enforced at the service layer) include:
 """
 
 from enum import Enum
+from uuid import uuid4
 
 from sqlalchemy import Column, DateTime, Enum as SAEnum, Float, ForeignKey, String, UniqueConstraint, Index, func
 from sqlalchemy.orm import relationship
@@ -55,7 +56,7 @@ class MemoryRelationship(Base):
         Index('idx_memory_relationships_user_target', 'user_id', 'target_memory_id'),
     )
 
-    id: str = Column(String(36), primary_key=True, default=func.uuid_generate_v4(), index=True)
+    id: str = Column(String(36), primary_key=True, default=lambda: str(uuid4()), index=True)
     user_id: str = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     source_memory_id: str = Column(String(36), ForeignKey("memories.id", ondelete="RESTRICT"), nullable=False, index=True)
     target_memory_id: str = Column(String(36), ForeignKey("memories.id", ondelete="RESTRICT"), nullable=False, index=True)
