@@ -19,6 +19,8 @@ import type {
   EvaluationRun,
   EvaluationResult,
   MemoryQualityResult,
+  WalletNonceResponse,
+  WalletAuthResponse,
 } from '@/types';
 
 const BASE = ''; // proxied via next.config.js rewrites
@@ -70,6 +72,40 @@ export async function getMe(token: string): Promise<User> {
     headers: authHeaders(token),
   });
   return handleResponse<User>(res);
+}
+
+export async function getWalletNonce(
+  address: string,
+  chainId = 10143
+): Promise<WalletNonceResponse> {
+  const query = new URLSearchParams({
+    address,
+    chain_id: String(chainId),
+  });
+  const res = await fetch(`${BASE}/api/auth/wallet/nonce?${query.toString()}`);
+  return handleResponse<WalletNonceResponse>(res);
+}
+
+export async function verifyWallet(
+  payload: {
+    address: string;
+    signature: string;
+    nonce: string;
+  },
+  token?: string | null
+): Promise<WalletAuthResponse> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  const res = await fetch(`${BASE}/api/auth/wallet/verify`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<WalletAuthResponse>(res);
 }
 
 // ---------- Memories ----------

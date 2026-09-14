@@ -280,3 +280,21 @@ export interface MemoryQualityResult {
   evaluated_at: string;
   summary_reason: string;
 }
+
+export interface WalletNonceResponse {
+  nonce: string;
+  domain: string;
+  statement: string;
+  uri: string;
+  chain_id: number;
+  issued_at: string;
+  expires_at: string;
+  message: string;
+}
+
+export interface WalletAuthResponse {
+  access_token: string;
+  token_type: string;
+  user: User;
+  action: 'bound' | 'login';
+}
