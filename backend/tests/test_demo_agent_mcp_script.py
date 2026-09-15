@@ -19,8 +19,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 DEMO_SCRIPT = SCRIPTS_DIR / "demo_agent_mcp_auth.py"
@@ -121,7 +119,6 @@ def test_07_backend_unavailable_exits_nonzero():
 
 def test_08_expected_403_handling():
     """TEST 8: mcp_call correctly distinguishes 403 from 200."""
-    import httpx
     # Using respx or mocking mcp_call function directly to test return contract
     code, data = demo_agent_mcp_auth.mcp_call(
         base_url="http://127.0.0.1:59999",
