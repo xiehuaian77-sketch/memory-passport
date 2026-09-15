@@ -20,8 +20,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import get_current_caller
+from app.models.caller import CallerContext
+from app.models.permission_grant import AgentPermission
 from app.models.user import User
+from app.services import agent_permission_service
+from app.services.authorization_service import authorize_mcp_tool, log_mcp_audit
 from app.mcp.constants import (
     JSONRPC_INVALID_PARAMS,
     JSONRPC_INVALID_REQUEST,
@@ -72,7 +76,7 @@ async def mcp_get_handler() -> Response:
 @router.post("/mcp")
 async def mcp_post_endpoint(
     request: Request,
-    user: User = Depends(get_current_user),
+    caller: CallerContext = Depends(get_current_caller),
     db: AsyncSession = Depends(get_db),
     origin: str | None = Header(default=None),
     mcp_protocol_version: str | None = Header(default=None, alias="MCP-Protocol-Version"),
@@ -237,8 +241,47 @@ async def mcp_post_endpoint(
                 headers={"MCP-Protocol-Version": MCP_PROTOCOL_VERSION},
             )
 
+    # 6.5 Authorization for Agent Callers
+    user = caller.user
+    if user is None:
+        user = await db.get(User, caller.user_id)
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+    if caller.is_agent:
+        if method == "tools/call":
+            tool_name = params.get("name") if isinstance(params, dict) else ""
+            tool_args = params.get("arguments") if isinstance(params, dict) else {}
+            decision = await authorize_mcp_tool(
+                db,
+                caller=caller,
+                tool_name=tool_name,
+                arguments=tool_args,
+            )
+            await log_mcp_audit(db, caller=caller, tool_name=tool_name, decision=decision)
+            if not decision.allowed:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Permission denied: {decision.reason}",
+                )
+            if decision.preference_only:
+                caller.preference_only = True
+
+        elif method in ("resources/read", "resources/list"):
+            has_read = await agent_permission_service.check_permission(
+                db,
+                user_id=caller.user_id,
+                agent_id=caller.agent_id,
+                permission=AgentPermission.READ_MEMORY,
+            )
+            if not has_read:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Permission denied: Missing required permission: READ_MEMORY for resources",
+                )
+
     # 7. Dispatch to MCPServer
-    result = await mcp_server.handle_request(body, user=user, db=db)
+    result = await mcp_server.handle_request(body, user=user, db=db, caller=caller)
 
     return Response(
         content=json.dumps(result, ensure_ascii=False),

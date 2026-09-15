@@ -186,6 +186,7 @@ class MCPToolRegistry:
         *,
         user: User,
         db: AsyncSession,
+        caller: Any | None = None,
     ) -> dict[str, Any]:
         if name not in self._tools:
             raise KeyError(f"Tool '{name}' not found")
@@ -194,7 +195,12 @@ class MCPToolRegistry:
         handler = self._handlers[name]
         clean_args = arguments or {}
         parsed = schema_cls.model_validate(clean_args)
-        return await handler(parsed, user=user, db=db)
+        import inspect
+        sig = inspect.signature(handler)
+        kwargs: dict[str, Any] = {"user": user, "db": db}
+        if "caller" in sig.parameters:
+            kwargs["caller"] = caller
+        return await handler(parsed, **kwargs)
 
 
 registry = MCPToolRegistry()
@@ -206,7 +212,7 @@ registry = MCPToolRegistry()
     "Search user memories using semantic, keyword, or hybrid mode with strict user isolation.",
     MemorySearchInput,
 )
-async def handle_memory_search(args: MemorySearchInput, *, user: User, db: AsyncSession) -> dict[str, Any]:
+async def handle_memory_search(args: MemorySearchInput, *, user: User, db: AsyncSession, caller: Any | None = None) -> dict[str, Any]:
     policy = await governance_service.get_user_policy(db, user_id=user.id)
     if not (policy.memory_enabled and policy.allow_memory_retrieval):
         return {"isError": True, "content": [{"type": "text", "text": "Memory retrieval is disabled by user policy"}]}
@@ -230,6 +236,8 @@ async def handle_memory_search(args: MemorySearchInput, *, user: User, db: Async
             {"id": r.memory.id, "content": r.memory.content, "type": r.memory.memory_type, "score": r.hybrid_score}
             for r in results
         ]
+    if caller and getattr(caller, "preference_only", False):
+        items = [it for it in items if it.get("type") == "preference"]
     return {"content": [{"type": "text", "text": json.dumps(items, ensure_ascii=False)}]}
 
 
@@ -238,23 +246,24 @@ async def handle_memory_search(args: MemorySearchInput, *, user: User, db: Async
     "Assemble budgeted context for query with temporal evaluation and optional 1-hop graph expansion.",
     MemoryRetrieveInput,
 )
-async def handle_memory_retrieve(args: MemoryRetrieveInput, *, user: User, db: AsyncSession) -> dict[str, Any]:
+async def handle_memory_retrieve(args: MemoryRetrieveInput, *, user: User, db: AsyncSession, caller: Any | None = None) -> dict[str, Any]:
     policy = await governance_service.get_user_policy(db, user_id=user.id)
     if not (policy.memory_enabled and policy.allow_memory_retrieval):
         return {"isError": True, "content": [{"type": "text", "text": "Memory retrieval is disabled by user policy"}]}
 
+    is_pref_only = bool(caller and getattr(caller, "preference_only", False))
     req = MemoryRetrievalRequest(
         query=args.query,
         top_k=args.top_k,
         min_relevance=args.min_relevance,
         min_importance=args.min_importance,
         min_confidence=args.min_confidence,
-        memory_types=args.memory_types,
+        memory_types=["preference"] if is_pref_only else args.memory_types,
         max_context_chars=args.max_context_chars,
         status=args.status,
         temporal_mode=args.temporal_mode,
         reference_time=args.reference_time,
-        graph_enabled=args.graph_enabled,
+        graph_enabled=False if is_pref_only else args.graph_enabled,
         graph_seed_limit=args.graph_seed_limit,
         graph_max_expanded=args.graph_max_expanded,
     )
@@ -278,10 +287,12 @@ async def handle_memory_retrieve(args: MemoryRetrieveInput, *, user: User, db: A
     "Get a single memory by ID. Returns error if not found or belongs to another user.",
     MemoryGetInput,
 )
-async def handle_memory_get(args: MemoryGetInput, *, user: User, db: AsyncSession) -> dict[str, Any]:
+async def handle_memory_get(args: MemoryGetInput, *, user: User, db: AsyncSession, caller: Any | None = None) -> dict[str, Any]:
     mem = await memory_service.get_memory_by_id(db, memory_id=args.memory_id, user_id=user.id)
     if not mem:
         return {"isError": True, "content": [{"type": "text", "text": f"Memory '{args.memory_id}' not found"}]}
+    if caller and getattr(caller, "preference_only", False) and mem.memory_type != "preference":
+        return {"isError": True, "content": [{"type": "text", "text": f"Access denied: Memory '{args.memory_id}' is not a preference"}]}
     return {
         "content": [
             {

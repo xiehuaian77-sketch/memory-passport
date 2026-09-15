@@ -65,7 +65,7 @@ class Agent(Base):
     # Relationships
     user: Mapped[User] = relationship(back_populates="agents")
     permissions: Mapped[list[PermissionGrant]] = relationship(
-        back_populates="agent", cascade="all, delete-orphan", lazy="selectin"
+        "PermissionGrant", back_populates="agent", cascade="all, delete-orphan", lazy="selectin"
     )
 
     def __repr__(self) -> str:

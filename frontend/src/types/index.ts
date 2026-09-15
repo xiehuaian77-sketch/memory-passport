@@ -298,3 +298,60 @@ export interface WalletAuthResponse {
   user: User;
   action: 'bound' | 'login';
 }
+
+// ---------- Agent Access Control (Phase 6.5) ----------
+
+export type AgentPermissionType =
+  | 'READ_MEMORY'
+  | 'READ_PREFERENCES'
+  | 'CREATE_MEMORY'
+  | 'UPDATE_MEMORY';
+
+export interface Agent {
+  id: string;
+  user_id: string;
+  name: string;
+  description: string | null;
+  status: 'active' | 'revoked' | 'ACTIVE' | 'REVOKED';
+  has_api_key?: boolean;
+  api_key?: string;
+  created_at: string;
+  updated_at?: string;
+  revoked_at?: string | null;
+}
+
+export interface AgentCreateRequest {
+  name: string;
+  description?: string | null;
+}
+
+export interface AgentCreateResponse extends Agent {
+  api_key: string;
+}
+
+export interface PermissionGrant {
+  id: string;
+  user_id: string;
+  agent_id: string;
+  permission: AgentPermissionType;
+  status: 'active' | 'revoked' | 'expired' | 'ACTIVE' | 'REVOKED' | 'EXPIRED';
+  is_active: boolean;
+  created_at: string;
+  updated_at?: string;
+  expires_at?: string | null;
+  revoked_at?: string | null;
+}
+
+export interface AgentAuditLog {
+  id: string;
+  user_id: string;
+  actor_type: string;
+  actor_id: string;
+  action: string;
+  tool: string | null;
+  permission: string | null;
+  decision: string | null;
+  reason: string | null;
+  created_at: string;
+  metadata?: Record<string, unknown>;
+}

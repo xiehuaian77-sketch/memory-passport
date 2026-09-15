@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
+from app.models.caller import CallerContext
 from app.models.user import User
 
 
@@ -81,3 +82,29 @@ async def verify_mcp_api_key(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid MCP API key",
         )
+
+
+async def get_current_caller(
+    authorization: str | None = Header(default=None, description="Bearer <token|agent_key>"),
+    db: AsyncSession = Depends(get_db),
+) -> "CallerContext":
+    """Resolve caller identity as either HumanCaller (via JWT) or AgentCaller (via Agent API Key)."""
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing Authorization header",
+        )
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authorization header format. Use: Bearer <token>",
+        )
+    raw_token = authorization.removeprefix("Bearer ").strip()
+
+    if raw_token.startswith("mp_ak_"):
+        from app.services import agent_service
+        return await agent_service.authenticate_agent_key(db, raw_token)
+
+    user = await get_current_user(authorization=authorization, db=db)
+    from app.models.caller import HumanCaller
+    return HumanCaller(user_id=user.id, user=user)

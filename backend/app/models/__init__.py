@@ -7,8 +7,11 @@ from app.models.governance import AuditAction, AuditActorType, MemoryAuditLog, U
 from app.models.memory_relationship import MemoryRelationship
 from app.models.memory import Memory
 from app.models.user import User
+from app.models.agent import Agent
+from app.models.permission_grant import PermissionGrant
 
 __all__ = [
+    "Agent",
     "AuditAction",
     "AuditActorType",
     "Base",
@@ -21,6 +24,7 @@ __all__ = [
     "Memory",
     "MemoryAuditLog",
     "MemoryRelationship",
+    "PermissionGrant",
     "User",
     "UserMemoryPolicy",
 ]

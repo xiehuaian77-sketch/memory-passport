@@ -25,6 +25,7 @@ class AuditActorType(str, Enum):
     USER = "user"
     AI = "ai"
     SYSTEM = "system"
+    AGENT = "agent"
 
 
 class AuditAction(str, Enum):
@@ -37,7 +38,12 @@ class AuditAction(str, Enum):
     EXTRACT_CANDIDATE = "EXTRACT_CANDIDATE"
     CONFLICT_DETECTED = "CONFLICT_DETECTED"
     SUPERSEDE = "SUPERSEDE"
-    # New actions for memory relationships
+    AGENT_REGISTER = "AGENT_REGISTER"
+    AGENT_REVOKE = "AGENT_REVOKE"
+    PERMISSION_GRANT = "PERMISSION_GRANT"
+    PERMISSION_REVOKE = "PERMISSION_REVOKE"
+    AGENT_ACCESS = "AGENT_ACCESS"
+
     RELATIONSHIP_CREATE = "RELATIONSHIP_CREATE"
     RELATIONSHIP_DELETE = "RELATIONSHIP_DELETE"
 

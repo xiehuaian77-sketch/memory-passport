@@ -47,6 +47,7 @@ class MCPServer:
         *,
         user: User,
         db: AsyncSession,
+        caller: Any | None = None,
     ) -> dict[str, Any]:
         """Process a single JSON-RPC 2.0 message."""
         req_id = body.get("id")
@@ -107,7 +108,7 @@ class MCPServer:
                     return make_jsonrpc_error(req_id, JSONRPC_INVALID_PARAMS, f"Unknown tool: '{name}'")
 
                 try:
-                    result = await tool_registry.execute(name, arguments, user=user, db=db)
+                    result = await tool_registry.execute(name, arguments, user=user, db=db, caller=caller)
                     return make_jsonrpc_result(req_id, result)
                 except ValueError as ve:
                     return make_jsonrpc_result(req_id, {

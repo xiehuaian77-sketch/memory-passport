@@ -10,6 +10,7 @@ from sqlalchemy import DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.models.agent import Agent
 
 
 def _utcnow() -> datetime:
@@ -50,6 +51,9 @@ class User(Base):
     )
     conversations: Mapped[list["Conversation"]] = relationship(  # noqa: F821
         back_populates="user", cascade="all, delete-orphan", lazy="selectin"
+    )
+    agents: Mapped[list["Agent"]] = relationship(  # noqa: F821
+        "Agent", back_populates="user", cascade="all, delete-orphan", lazy="selectin"
     )
 
     def __repr__(self) -> str:

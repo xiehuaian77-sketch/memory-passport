@@ -21,6 +21,12 @@ import type {
   MemoryQualityResult,
   WalletNonceResponse,
   WalletAuthResponse,
+  Agent,
+  AgentCreateRequest,
+  AgentCreateResponse,
+  AgentPermissionType,
+  PermissionGrant,
+  AgentAuditLog,
 } from '@/types';
 
 const BASE = ''; // proxied via next.config.js rewrites
@@ -652,4 +658,90 @@ export async function getMemoryQuality(
     headers: authHeaders(token),
   });
   return handleResponse<MemoryQualityResult>(res);
+}
+
+// ---------- Agent Access Control (Phase 6.5) ----------
+
+export async function listAgents(token: string): Promise<Agent[]> {
+  const res = await fetch(`${BASE}/api/agents`, {
+    headers: authHeaders(token),
+  });
+  return handleResponse<Agent[]>(res);
+}
+
+export async function createAgent(
+  token: string,
+  data: AgentCreateRequest
+): Promise<AgentCreateResponse> {
+  const res = await fetch(`${BASE}/api/agents`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(data),
+  });
+  return handleResponse<AgentCreateResponse>(res);
+}
+
+export async function getAgent(token: string, agentId: string): Promise<Agent> {
+  const res = await fetch(`${BASE}/api/agents/${agentId}`, {
+    headers: authHeaders(token),
+  });
+  return handleResponse<Agent>(res);
+}
+
+export async function revokeAgent(token: string, agentId: string): Promise<Agent> {
+  const res = await fetch(`${BASE}/api/agents/${agentId}/revoke`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  });
+  return handleResponse<Agent>(res);
+}
+
+export async function listAgentPermissions(
+  token: string,
+  agentId: string
+): Promise<PermissionGrant[]> {
+  const res = await fetch(`${BASE}/api/agents/${agentId}/permissions`, {
+    headers: authHeaders(token),
+  });
+  return handleResponse<PermissionGrant[]>(res);
+}
+
+export async function grantAgentPermission(
+  token: string,
+  agentId: string,
+  permission: AgentPermissionType,
+  expiresAt?: string | null
+): Promise<PermissionGrant> {
+  const res = await fetch(`${BASE}/api/agents/${agentId}/permissions`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({ permission, expires_at: expiresAt || null }),
+  });
+  return handleResponse<PermissionGrant>(res);
+}
+
+export async function revokeAgentPermission(
+  token: string,
+  agentId: string,
+  permission: AgentPermissionType
+): Promise<PermissionGrant> {
+  const res = await fetch(
+    `${BASE}/api/agents/${agentId}/permissions/${permission}/revoke`,
+    {
+      method: 'POST',
+      headers: authHeaders(token),
+    }
+  );
+  return handleResponse<PermissionGrant>(res);
+}
+
+export async function listAgentAuditLogs(
+  token: string,
+  offset = 0,
+  limit = 50
+): Promise<AgentAuditLog[]> {
+  const res = await fetch(`${BASE}/api/agents/audit-logs?offset=${offset}&limit=${limit}`, {
+    headers: authHeaders(token),
+  });
+  return handleResponse<AgentAuditLog[]>(res);
 }

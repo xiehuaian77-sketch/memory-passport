@@ -29,5 +29,6 @@ async def init_db() -> None:
     """Create all tables (for development / MVP). Use Alembic in production."""
     from app.models.base import Base  # noqa: F811
 
+    import app.models  # noqa: F401 (Ensure all model modules are loaded)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
