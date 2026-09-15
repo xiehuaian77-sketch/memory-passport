@@ -47,12 +47,15 @@ if "DATABASE_URL" not in os.environ:
     os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{canonical_db}"
 
 import bcrypt
+from app.models.agent import Agent, AgentStatus
 from app.models.base import Base
 from app.models.evaluation import EvaluationCase, EvaluationDataset, EvaluationRun
 from app.models.governance import AuditAction, AuditActorType, MemoryAuditLog
 from app.models.memory import Memory
 from app.models.memory_relationship import MemoryRelationship, RelationshipType
+from app.models.permission_grant import AgentPermission, PermissionGrant
 from app.models.user import User
+from app.services import agent_permission_service, agent_service
 from app.services.evaluation_service import EvaluationService
 from sqlalchemy import select
 from sqlalchemy.exc import DBAPIError, SQLAlchemyError
@@ -599,6 +602,72 @@ async def seed_demo_environment(
         runs_final = (await db.execute(stmt_runs_final)).scalars().all()
         summary["runs_count"] = len(runs_final)
 
+        # 8. Demo Agent Seed & Minimal READ_MEMORY Grant (Phase 6.6)
+        demo_agent_name = "Demo Research Assistant"
+        demo_agent_desc = "DEMO_ONLY — Hackathon Agent Memory Demo"
+
+        stmt_agent = (
+            select(Agent)
+            .where(
+                Agent.user_id == user_id,
+                Agent.name == demo_agent_name,
+            )
+            .order_by(Agent.created_at.desc())
+        )
+        existing_agent = (await db.execute(stmt_agent)).scalars().first()
+
+        agent_api_key: str | None = None
+        if existing_agent is None:
+            agent, raw_api_key = await agent_service.create_agent(
+                db,
+                user_id=user_id,
+                name=demo_agent_name,
+                description=demo_agent_desc,
+            )
+            agent_api_key = raw_api_key
+            logger.info("Created Demo Agent: %s (id=%s)", agent.name, agent.id)
+
+            # Grant READ_MEMORY
+            await agent_permission_service.grant_permission(
+                db,
+                user_id=user_id,
+                agent_id=agent.id,
+                permission=AgentPermission.READ_MEMORY,
+            )
+            logger.info("Granted READ_MEMORY to Demo Agent %s", agent.id)
+            target_agent = agent
+        else:
+            if existing_agent.status != AgentStatus.ACTIVE.value:
+                existing_agent.status = AgentStatus.ACTIVE.value
+            existing_agent.description = demo_agent_desc
+            target_agent = existing_agent
+            logger.info("Reusing existing Demo Agent: %s (id=%s)", existing_agent.name, existing_agent.id)
+
+            # Ensure READ_MEMORY grant exists and is active
+            stmt_grant = select(PermissionGrant).where(
+                PermissionGrant.user_id == user_id,
+                PermissionGrant.agent_id == target_agent.id,
+                PermissionGrant.permission == AgentPermission.READ_MEMORY.value,
+            )
+            existing_grant = (await db.execute(stmt_grant)).scalar_one_or_none()
+            if existing_grant is None:
+                await agent_permission_service.grant_permission(
+                    db,
+                    user_id=user_id,
+                    agent_id=target_agent.id,
+                    permission=AgentPermission.READ_MEMORY,
+                )
+                logger.info("Granted missing READ_MEMORY to Demo Agent %s", target_agent.id)
+            elif not existing_grant.is_effective_active:
+                existing_grant.status = "active"
+                existing_grant.revoked_at = None
+                await db.flush()
+
+        summary["agent_id"] = target_agent.id
+        summary["agent_name"] = target_agent.name
+        summary["agent_status"] = target_agent.status
+        summary["agent_api_key"] = agent_api_key
+
         await db.commit()
 
     await engine.dispose()
@@ -615,14 +684,25 @@ def main() -> None:
     results = asyncio.run(seed_demo_environment(db_path=args.db_path, database_url=args.database_url))
 
     print("\n" + "=" * 60)
-    print(" [PHASE 6.1] MEMORY PASSPORT DEMO SEED COMPLETED")
+    print(" [PHASE 6.6] MEMORY PASSPORT DEMO SEED COMPLETED")
     print("=" * 60)
-    print(f" Demo User:      {results.get('user_email')}")
-    print(" Password:       demo123456")
-    print(f" User ID:        {results.get('user_id')}")
-    print(f" Memories:       {results.get('memories_count')} items (Active, Superseded, Conflicted)")
-    print(f" Relationships:  {results.get('relationships_count')} graph edges")
-    print(f" Evaluation:     1 Dataset, {results.get('cases_count')} Cases, {results.get('runs_count')} Runs")
+    print(f" Demo User:          {results.get('user_email')}")
+    print(" Password:           demo123456")
+    print(f" User ID:            {results.get('user_id')}")
+    print(f" Memories:           {results.get('memories_count')} items (Active, Superseded, Conflicted)")
+    print(f" Relationships:      {results.get('relationships_count')} graph edges")
+    print(f" Evaluation:         1 Dataset, {results.get('cases_count')} Cases, {results.get('runs_count')} Runs")
+    print("-" * 60)
+    print(f" Demo Agent:         {results.get('agent_name')}")
+    print(f" Agent ID:           {results.get('agent_id')}")
+    print(f" Status:             {results.get('agent_status')}")
+    print(" Granted Permission: READ_MEMORY")
+    if results.get("agent_api_key"):
+        print(f" API Key:            {results.get('agent_api_key')}")
+        print("\n WARNING:")
+        print(" DEMO_ONLY API KEY — DO NOT USE IN PRODUCTION")
+    else:
+        print(" API Key:            <not regenerated — existing credential preserved>")
     print("=" * 60 + "\n")
 
 

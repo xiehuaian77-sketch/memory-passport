@@ -19,6 +19,7 @@ import { useAuth } from '@/lib/auth-context';
 import * as api from '@/lib/api';
 import { formatDate } from '@/lib/utils';
 import * as web3 from '@/lib/web3';
+import AgentAccessControl from '@/components/AgentAccessControl';
 
 export default function IdentityPage() {
   const { user, token, isLoading, logout, refreshUser } = useAuth();
@@ -508,6 +509,9 @@ export default function IdentityPage() {
             </div>
           )}
         </section>
+
+        {/* AI Agent Access Control & Permission Delegation Section */}
+        {token && <AgentAccessControl token={token} />}
 
         {/* Profile Edit */}
         <section className="mb-6 rounded-xl border border-slate-700 bg-slate-800/50 p-6">

@@ -27,10 +27,13 @@ if str(BACKEND_DIR) not in sys.path:
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
+from app.models.agent import Agent
 from app.models.evaluation import EvaluationCase, EvaluationDataset, EvaluationRun
 from app.models.memory import Memory
 from app.models.memory_relationship import MemoryRelationship
+from app.models.permission_grant import PermissionGrant
 from app.models.user import User
+from app.services import agent_service
 from seed_demo_data import seed_demo_environment
 
 
@@ -47,6 +50,12 @@ async def test_demo_seed_idempotency_and_completeness(tmp_path: Path) -> None:
     assert res_1["relationships_count"] == 5
     assert res_1["cases_count"] == 5
     assert res_1["runs_count"] == 2
+    assert res_1["agent_name"] == "Demo Research Assistant"
+    assert res_1["agent_status"].upper() == "ACTIVE"
+    assert res_1["agent_id"].startswith("ag_")
+    assert res_1["agent_api_key"] is not None
+    assert res_1["agent_api_key"].startswith("mp_ak_")
+    assert len(res_1["agent_api_key"]) == 70
 
     # Verify DB directly
     engine = create_async_engine(db_url, echo=False)
@@ -106,6 +115,26 @@ async def test_demo_seed_idempotency_and_completeness(tmp_path: Path) -> None:
             assert r.summary_metrics_json is not None
             assert "total_cases" in r.summary_metrics_json
 
+        # 5. Agent & Permissions verification
+        agent_stmt = select(Agent).where(Agent.id == res_1["agent_id"])
+        agent = (await db.execute(agent_stmt)).scalar_one_or_none()
+        assert agent is not None
+        assert agent.name == "Demo Research Assistant"
+        assert agent.user_id == user.id
+        assert agent.status.upper() == "ACTIVE"
+        assert "DEMO_ONLY" in agent.description
+        assert agent.key_hash is not None
+        assert agent.key_hash != res_1["agent_api_key"]
+        assert not hasattr(agent, "api_key")
+        assert not hasattr(agent, "plaintext_key")
+        assert agent_service.verify_agent_key(res_1["agent_api_key"], agent.key_hash) is True
+
+        grant_stmt = select(PermissionGrant).where(PermissionGrant.agent_id == agent.id)
+        grants = (await db.execute(grant_stmt)).scalars().all()
+        assert len(grants) == 1
+        assert grants[0].permission == "READ_MEMORY"
+        assert grants[0].is_effective_active is True
+
     await engine.dispose()
 
     # Run 2: Idempotent Reseed on same DB
@@ -115,6 +144,8 @@ async def test_demo_seed_idempotency_and_completeness(tmp_path: Path) -> None:
     assert res_2["relationships_count"] == 5
     assert res_2["cases_count"] == 5
     assert res_2["runs_count"] == 2
+    assert res_2["agent_id"] == res_1["agent_id"]
+    assert res_2["agent_api_key"] is None  # Credential preserved, not regenerated
 
     # Verify counts did not inflate
     engine_2 = create_async_engine(db_url, echo=False)
@@ -124,11 +155,15 @@ async def test_demo_seed_idempotency_and_completeness(tmp_path: Path) -> None:
         mem_count = (await db.execute(select(func.count(Memory.id)).where(Memory.user_id == user.id))).scalar()
         rel_count = (await db.execute(select(func.count(MemoryRelationship.id)).where(MemoryRelationship.user_id == user.id))).scalar()
         run_count = (await db.execute(select(func.count(EvaluationRun.id)).where(EvaluationRun.dataset_id == ds.id))).scalar()
+        agent_count = (await db.execute(select(func.count(Agent.id)).where(Agent.user_id == user.id))).scalar()
+        grant_count = (await db.execute(select(func.count(PermissionGrant.id)).where(PermissionGrant.user_id == user.id))).scalar()
 
         assert user_count == 1
         assert mem_count == 10
         assert rel_count == 5
         assert run_count == 2
+        assert agent_count == 1
+        assert grant_count == 1
 
     await engine_2.dispose()
 
